@@ -7,6 +7,7 @@
 <script src="https://unpkg.com/pdf-lib@1.17.1/dist/pdf-lib.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
 <script src="https://unpkg.com/mammoth@1.6.0/mammoth.browser.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/docx-preview@0.1.22/dist/docx-preview.min.js"></script>
 <script src="https://cdn.sheetjs.com/xlsx-0.20.1/package/dist/xlsx.full.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
 <style>
@@ -102,6 +103,20 @@ body { font-family: 'Segoe UI', 'Yu Gothic UI', 'Meiryo', sans-serif; background
 .hint { font-size: 12px; color: #999; margin-top: 4px; }
 
 .empty-state { text-align: center; padding: 40px; color: #999; }
+
+/* Rotate */
+.rotate-page-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(140px, 1fr)); gap: 12px; margin-top: 12px; max-height: 540px; overflow-y: auto; padding: 4px; }
+.rotate-page-item { background: white; border: 2px solid #e0e0e0; border-radius: 8px; overflow: hidden; cursor: pointer; transition: all 0.2s; user-select: none; }
+.rotate-page-item:hover { border-color: #1a73e8; box-shadow: 0 2px 8px rgba(0,0,0,0.15); }
+.rotate-page-item.selected { border-color: #1a73e8; box-shadow: 0 0 0 3px rgba(26,115,232,0.25); }
+.rotate-page-item canvas { width: 100%; display: block; }
+.rotate-page-item .page-num { text-align: center; padding: 6px; font-size: 12px; color: #666; background: #fafafa; }
+.rotate-page-item.selected .page-num { background: #e8f0fe; color: #1a73e8; font-weight: 600; }
+.rotate-btns { display: flex; gap: 10px; flex-wrap: wrap; margin-top: 16px; align-items: center; }
+.btn-rotate { background: #fff; border: 1.5px solid #1a73e8; color: #1a73e8; padding: 9px 20px; border-radius: 8px; font-size: 15px; font-weight: 600; cursor: pointer; transition: all 0.2s; }
+.btn-rotate:hover:not(:disabled) { background: #e8f0fe; }
+.btn-rotate:disabled { border-color: #ccc; color: #ccc; cursor: not-allowed; }
+.rotate-hint { font-size: 12px; color: #999; }
 </style>
 </head>
 <body>
@@ -114,6 +129,7 @@ body { font-family: 'Segoe UI', 'Yu Gothic UI', 'Meiryo', sans-serif; background
 <div class="tabs">
   <div class="tab active" data-tab="merge">結合</div>
   <div class="tab" data-tab="split">分割</div>
+  <div class="tab" data-tab="rotate">回転</div>
 </div>
 
 <div class="container">
@@ -225,7 +241,51 @@ body { font-family: 'Segoe UI', 'Yu Gothic UI', 'Meiryo', sans-serif; background
       <div class="preview-grid" id="splitPreviewGrid"></div>
     </div>
   </div>
-</div>
+
+  <!-- ROTATE PANEL -->
+  <div id="rotate" class="panel">
+    <div class="upload-area" id="rotateUpload">
+      <div class="icon">🔄</div>
+      <p>回転するPDFをドラッグ＆ドロップ、またはクリックして選択</p>
+      <input type="file" id="rotateFileInput" accept=".pdf">
+    </div>
+
+    <div id="rotateSource" style="display:none">
+      <div class="split-source">
+        <div class="section-title" id="rotateFileNameLabel"></div>
+        <div class="info" id="rotateFileInfo"></div>
+
+        <div style="margin-top:14px;">
+          <div class="section-title">ページ選択（クリックで選択/解除）</div>
+          <div style="display:flex; gap:8px; flex-wrap:wrap; margin-bottom:8px;">
+            <button class="btn btn-secondary" id="btnRotateSelectAll" style="padding:6px 14px; font-size:12px;">全選択</button>
+            <button class="btn btn-secondary" id="btnRotateDeselectAll" style="padding:6px 14px; font-size:12px;">全解除</button>
+          </div>
+          <div class="rotate-page-grid" id="rotatePageGrid"></div>
+        </div>
+
+        <div class="rotate-btns">
+          <button class="btn-rotate" id="btnRotateLeft" disabled>↶ 左に90°</button>
+          <button class="btn-rotate" id="btnRotateRight" disabled>↷ 右に90°</button>
+          <button class="btn-rotate" id="btnRotate180" disabled>↕ 180°</button>
+          <span class="rotate-hint">選択したページに適用されます</span>
+        </div>
+
+        <div style="margin-top:16px; display:flex; align-items:center; gap:8px; flex-wrap:wrap;">
+          <label style="font-size:14px; font-weight:500; white-space:nowrap;">ファイル名：</label>
+          <input type="text" id="rotateOutputName" value="回転済み" placeholder="ファイル名を入力" style="flex:1; min-width:200px; padding:8px 12px; border:1px solid #ddd; border-radius:6px; font-size:14px;">
+          <span style="font-size:14px; color:#888;">.pdf</span>
+        </div>
+        <div class="actions">
+          <button class="btn btn-primary" id="btnRotateDownload" disabled>ダウンロード</button>
+          <button class="btn btn-danger" id="btnClearRotate">クリア</button>
+        </div>
+        <div class="status" id="rotateStatus"></div>
+      </div>
+    </div>
+  </div>
+
+</div><!-- /container -->
 
 <!-- Modal -->
 <div class="modal" id="previewModal">
@@ -349,9 +409,71 @@ async function officeToImages(fileName, arrayBuffer) {
 }
 
 async function wordToImages(arrayBuffer) {
-  const result = await mammoth.convertToHtml({ arrayBuffer });
-  const html = result.value;
-  return await htmlToPageImages(html, 'word');
+  // docx-preview でWordを直接レンダリング（配置・スタイルを正確に再現）
+  const pageWidth = 794;   // A4幅 (96dpi)
+  const pageHeight = 1123; // A4高さ (96dpi)
+
+  const container = document.createElement('div');
+  container.style.cssText = `position:absolute;left:-9999px;top:0;width:${pageWidth}px;background:white;`;
+  document.body.appendChild(container);
+
+  try {
+    if (typeof docx !== 'undefined' && typeof docx.renderAsync === 'function') {
+      // docx-preview でレンダリング
+      await docx.renderAsync(arrayBuffer, container, null, {
+        inWrapper: false,
+        ignoreWidth: true,
+        ignoreHeight: true,
+        breakPages: false,
+        renderHeaders: false,
+        renderFooters: false,
+        useBase64URL: true,
+      });
+    } else {
+      // フォールバック: Mammoth
+      const result = await mammoth.convertToHtml({ arrayBuffer });
+      container.innerHTML = `<style>p{margin:0 0 0.8em;}table{border-collapse:collapse;width:100%;}td,th{border:1px solid #999;padding:4px 8px;}</style>` + result.value;
+    }
+
+    // レンダリング完了待ち（画像・フォント読み込みを含む）
+    await new Promise(r => setTimeout(r, 600));
+
+    const totalHeight = container.scrollHeight;
+    const numPages = Math.max(1, Math.ceil(totalHeight / pageHeight));
+    const pages = [];
+
+    for (let i = 0; i < numPages; i++) {
+      const captureH = Math.min(pageHeight, totalHeight - i * pageHeight);
+      const canvas = await html2canvas(container, {
+        scale: 2,
+        useCORS: true,
+        allowTaint: true,
+        backgroundColor: '#ffffff',
+        width: pageWidth,
+        height: captureH,
+        x: 0,
+        y: i * pageHeight,
+        scrollX: 0,
+        scrollY: 0,
+      });
+
+      // 常にA4サイズで出力（最終ページも白で埋める）
+      const out = document.createElement('canvas');
+      out.width  = pageWidth  * 2;
+      out.height = pageHeight * 2;
+      const ctx = out.getContext('2d');
+      ctx.fillStyle = '#ffffff';
+      ctx.fillRect(0, 0, out.width, out.height);
+      ctx.drawImage(canvas, 0, 0);
+
+      const blob = await new Promise(r => out.toBlob(r, 'image/png'));
+      pages.push(await blob.arrayBuffer());
+    }
+
+    return pages;
+  } finally {
+    document.body.removeChild(container);
+  }
 }
 
 async function excelToImages(arrayBuffer, ext) {
@@ -373,54 +495,81 @@ async function excelToImages(arrayBuffer, ext) {
 }
 
 async function htmlToPageImages(html, type) {
-  // 非表示のコンテナにHTMLを描画し、html2canvasでキャプチャ
+  // A4サイズ（96dpi基準）: 794 x 1123 px
+  const pageWidth = 794;
+  const pageHeight = 1123;
+  const padding = 60;
+
+  // position:absolute で body に追加（html2canvas との相性が良い）
   const container = document.createElement('div');
-  container.style.cssText = 'position:fixed;left:-9999px;top:0;width:750px;background:white;padding:32px;font-family:"Yu Gothic","Meiryo",sans-serif;font-size:13px;line-height:1.6;color:#333;';
+  container.style.cssText = `position:absolute;left:-9999px;top:0;width:${pageWidth}px;background:white;padding:${padding}px;font-family:"Yu Gothic","Meiryo","MS Gothic","Hiragino Kaku Gothic ProN",sans-serif;font-size:13.5px;line-height:1.8;color:#222;word-break:break-word;box-sizing:border-box;`;
+
   if (type === 'excel') {
-    container.innerHTML = `<style>table{border-collapse:collapse;width:100%;font-size:12px;}td,th{border:1px solid #ccc;padding:4px 8px;text-align:left;}th{background:#f0f0f0;font-weight:600;}</style>` + html;
+    container.innerHTML = `<style>
+      *{box-sizing:border-box;}
+      table{border-collapse:collapse;width:100%;font-size:11px;margin:8px 0;}
+      td,th{border:1px solid #bbb;padding:4px 8px;text-align:left;vertical-align:top;}
+      th{background:#f0f0f0;font-weight:600;}
+    </style>` + html;
   } else {
-    container.innerHTML = `<style>table{border-collapse:collapse;width:100%;margin:8px 0;}td,th{border:1px solid #ccc;padding:4px 8px;}img{max-width:100%;}</style>` + html;
+    container.innerHTML = `<style>
+      *{box-sizing:border-box;}
+      p{margin:0 0 0.9em;}
+      h1{font-size:1.5em;font-weight:bold;margin:1em 0 0.5em;border-bottom:1px solid #ccc;padding-bottom:4px;}
+      h2{font-size:1.25em;font-weight:bold;margin:0.9em 0 0.4em;}
+      h3{font-size:1.1em;font-weight:bold;margin:0.8em 0 0.3em;}
+      h4,h5,h6{font-weight:bold;margin:0.7em 0 0.3em;}
+      table{border-collapse:collapse;width:100%;margin:8px 0;}
+      td,th{border:1px solid #999;padding:5px 8px;vertical-align:top;}
+      th{background:#f5f5f5;font-weight:600;}
+      ul,ol{margin:0.4em 0;padding-left:1.6em;}
+      li{margin-bottom:0.3em;}
+      img{max-width:100%;height:auto;}
+      strong,b{font-weight:bold;}
+      em,i{font-style:italic;}
+      blockquote{border-left:3px solid #ccc;margin:0.5em 0;padding:4px 12px;color:#555;}
+    </style>` + html;
   }
+
   document.body.appendChild(container);
 
-  // ページ分割: A4比率(約1.414)で区切る
-  const pageWidth = 750;
-  const pageHeight = Math.floor(pageWidth * 1.414);
+  // フォントとレイアウトのレンダリングを待つ
+  await new Promise(r => setTimeout(r, 300));
+
   const totalHeight = container.scrollHeight;
+  const numPages = Math.max(1, Math.ceil(totalHeight / pageHeight));
   const pages = [];
 
-  if (totalHeight <= pageHeight) {
-    const canvas = await html2canvas(container, { scale: 2, useCORS: true, width: pageWidth });
-    const blob = await new Promise(r => canvas.toBlob(r, 'image/png'));
+  for (let i = 0; i < numPages; i++) {
+    // html2canvas の y オプションで各ページの開始位置を指定してキャプチャ
+    const captureHeight = Math.min(pageHeight, totalHeight - i * pageHeight);
+    const canvas = await html2canvas(container, {
+      scale: 2,
+      useCORS: true,
+      allowTaint: true,
+      backgroundColor: '#ffffff',
+      width: pageWidth,
+      height: captureHeight,
+      x: 0,
+      y: i * pageHeight,
+      scrollX: 0,
+      scrollY: 0,
+    });
+
+    // 常にA4サイズ（高さ pageHeight）のキャンバスに描画（最終ページも余白を白で埋める）
+    const outputCanvas = document.createElement('canvas');
+    outputCanvas.width = pageWidth * 2;   // scale:2
+    outputCanvas.height = pageHeight * 2; // scale:2
+    const ctx = outputCanvas.getContext('2d');
+    ctx.fillStyle = '#ffffff';
+    ctx.fillRect(0, 0, outputCanvas.width, outputCanvas.height);
+    ctx.drawImage(canvas, 0, 0);
+
+    const blob = await new Promise(r => outputCanvas.toBlob(r, 'image/png'));
     pages.push(await blob.arrayBuffer());
-  } else {
-    // 複数ページに分割
-    const numPages = Math.ceil(totalHeight / pageHeight);
-    for (let i = 0; i < numPages; i++) {
-      container.style.height = pageHeight + 'px';
-      container.style.overflow = 'hidden';
-      container.scrollTop = i * pageHeight;
-      // html2canvas doesn't respect scrollTop, so use negative margin
-      container.style.marginTop = -(i * pageHeight) + 'px';
-      container.style.height = '';
-      container.style.overflow = '';
-
-      const wrapper = document.createElement('div');
-      wrapper.style.cssText = `position:fixed;left:-9999px;top:0;width:${pageWidth}px;height:${pageHeight}px;overflow:hidden;`;
-      wrapper.appendChild(container);
-      document.body.appendChild(wrapper);
-
-      const canvas = await html2canvas(wrapper, { scale: 2, useCORS: true, width: pageWidth, height: pageHeight });
-      const blob = await new Promise(r => canvas.toBlob(r, 'image/png'));
-      pages.push(await blob.arrayBuffer());
-
-      wrapper.removeChild(container);
-      document.body.removeChild(wrapper);
-      container.style.marginTop = '';
-    }
   }
 
-  if (container.parentNode) container.parentNode.removeChild(container);
+  document.body.removeChild(container);
   return pages;
 }
 
@@ -893,6 +1042,149 @@ document.getElementById('modalClose').addEventListener('click', () => {
 });
 document.getElementById('previewModal').addEventListener('click', e => {
   if (e.target === e.currentTarget) document.getElementById('previewModal').classList.remove('show');
+});
+
+// ===== ROTATE =====
+let rotateFileData = null;
+let rotatePageCount = 0;
+let rotateSelectedPages = new Set();
+
+const rotateUpload = document.getElementById('rotateUpload');
+const rotateFileInput = document.getElementById('rotateFileInput');
+
+rotateUpload.addEventListener('click', () => rotateFileInput.click());
+rotateUpload.addEventListener('dragover', e => { e.preventDefault(); rotateUpload.classList.add('dragover'); });
+rotateUpload.addEventListener('dragleave', () => rotateUpload.classList.remove('dragover'));
+rotateUpload.addEventListener('drop', e => {
+  e.preventDefault();
+  rotateUpload.classList.remove('dragover');
+  if (e.dataTransfer.files[0]) handleRotateFile(e.dataTransfer.files[0]);
+});
+rotateFileInput.addEventListener('change', e => { if (e.target.files[0]) handleRotateFile(e.target.files[0]); });
+
+async function handleRotateFile(file) {
+  if (!isPdfFile(file)) { alert('PDFファイルを選択してください'); return; }
+  try {
+    rotateFileData = await file.arrayBuffer();
+    const pdf = await PDFDocument.load(rotateFileData);
+    rotatePageCount = pdf.getPageCount();
+    rotateSelectedPages = new Set();
+
+    document.getElementById('rotateFileNameLabel').textContent = file.name;
+    document.getElementById('rotateFileInfo').textContent = `${rotatePageCount}ページ`;
+    document.getElementById('rotateSource').style.display = 'block';
+
+    await renderRotateGrid();
+    updateRotateButtons();
+  } catch (err) {
+    alert('読み込みエラー: ' + err.message);
+  }
+}
+
+async function renderRotateGrid() {
+  const grid = document.getElementById('rotatePageGrid');
+  grid.innerHTML = '<p>読み込み中...</p>';
+  try {
+    const dataCopy = new Uint8Array(rotateFileData).slice().buffer;
+    const pdfjs = await pdfjsLib.getDocument({ data: dataCopy }).promise;
+    grid.innerHTML = '';
+    for (let i = 1; i <= rotatePageCount; i++) {
+      const page = await pdfjs.getPage(i);
+      const scale = 160 / page.getViewport({ scale: 1 }).width;
+      const viewport = page.getViewport({ scale });
+      const canvas = document.createElement('canvas');
+      canvas.width = viewport.width;
+      canvas.height = viewport.height;
+      await page.render({ canvasContext: canvas.getContext('2d'), viewport }).promise;
+
+      const div = document.createElement('div');
+      div.className = 'rotate-page-item';
+      if (rotateSelectedPages.has(i - 1)) div.classList.add('selected');
+      div.appendChild(canvas);
+      const numLabel = document.createElement('div');
+      numLabel.className = 'page-num';
+      numLabel.textContent = `${i} ページ`;
+      div.appendChild(numLabel);
+
+      const idx = i - 1;
+      div.addEventListener('click', () => {
+        if (rotateSelectedPages.has(idx)) {
+          rotateSelectedPages.delete(idx);
+          div.classList.remove('selected');
+        } else {
+          rotateSelectedPages.add(idx);
+          div.classList.add('selected');
+        }
+        updateRotateButtons();
+      });
+      grid.appendChild(div);
+    }
+  } catch (err) {
+    grid.innerHTML = `<p style="color:#e53935;">プレビュー読み込みエラー: ${err.message}</p>`;
+  }
+}
+
+function updateRotateButtons() {
+  const hasSelected = rotateSelectedPages.size > 0;
+  const hasFile = rotateFileData !== null;
+  document.getElementById('btnRotateLeft').disabled = !hasSelected;
+  document.getElementById('btnRotateRight').disabled = !hasSelected;
+  document.getElementById('btnRotate180').disabled = !hasSelected;
+  document.getElementById('btnRotateDownload').disabled = !hasFile;
+}
+
+document.getElementById('btnRotateSelectAll').addEventListener('click', () => {
+  for (let i = 0; i < rotatePageCount; i++) rotateSelectedPages.add(i);
+  document.querySelectorAll('#rotatePageGrid .rotate-page-item').forEach(el => el.classList.add('selected'));
+  updateRotateButtons();
+});
+document.getElementById('btnRotateDeselectAll').addEventListener('click', () => {
+  rotateSelectedPages.clear();
+  document.querySelectorAll('#rotatePageGrid .rotate-page-item').forEach(el => el.classList.remove('selected'));
+  updateRotateButtons();
+});
+
+async function applyRotation(angleDelta) {
+  if (rotateSelectedPages.size === 0) return;
+  const status = document.getElementById('rotateStatus');
+  status.textContent = '回転中...';
+  try {
+    const pdf = await PDFDocument.load(rotateFileData);
+    rotateSelectedPages.forEach(idx => {
+      const page = pdf.getPage(idx);
+      const cur = page.getRotation().angle;
+      page.setRotation(PDFLib.degrees(((cur + angleDelta) % 360 + 360) % 360));
+    });
+    const bytes = await pdf.save();
+    rotateFileData = bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength);
+    const count = rotateSelectedPages.size;
+    rotateSelectedPages.clear();
+    await renderRotateGrid();
+    updateRotateButtons();
+    status.textContent = `${count}ページを回転しました`;
+  } catch (err) {
+    status.textContent = 'エラー: ' + err.message;
+  }
+}
+
+document.getElementById('btnRotateLeft').addEventListener('click', () => applyRotation(-90));
+document.getElementById('btnRotateRight').addEventListener('click', () => applyRotation(90));
+document.getElementById('btnRotate180').addEventListener('click', () => applyRotation(180));
+
+document.getElementById('btnRotateDownload').addEventListener('click', () => {
+  if (!rotateFileData) return;
+  const fname = document.getElementById('rotateOutputName').value.trim() || '回転済み';
+  download(new Uint8Array(rotateFileData), fname + '.pdf');
+  document.getElementById('rotateStatus').textContent = 'ダウンロードしました';
+});
+
+document.getElementById('btnClearRotate').addEventListener('click', () => {
+  rotateFileData = null;
+  rotatePageCount = 0;
+  rotateSelectedPages.clear();
+  document.getElementById('rotateSource').style.display = 'none';
+  document.getElementById('rotateStatus').textContent = '';
+  rotateFileInput.value = '';
 });
 
 // ===== DOWNLOAD HELPER =====
