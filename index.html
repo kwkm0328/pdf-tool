@@ -172,6 +172,17 @@ body { font-family: 'Segoe UI', 'Yu Gothic UI', 'Meiryo', sans-serif; background
 .redact-regex-body th { background: #eef3fb; font-weight: 700; }
 .redact-regex-body code { background: #fff; border: 1px solid #d8e0ec; border-radius: 4px; padding: 1px 5px; font-family: Consolas, monospace; color: #c0392b; }
 .redact-regex-note { color: #1565c0 !important; background: #fff; border-radius: 6px; padding: 8px 10px; margin-top: 8px !important; }
+.redact-check-box { background: #f0fbf5; border: 1px solid #b6e2cb; border-radius: 8px; padding: 12px 16px; margin-top: 10px; }
+.redact-check-result { margin-top: 12px; font-size: 13px; }
+.redact-check-result .risk-summary { background: #fff; border-radius: 6px; padding: 8px 12px; margin-bottom: 10px; line-height: 1.9; }
+.redact-check-result .ok { color: #0d7a4f; font-weight: 700; }
+.redact-check-result .leak-warn-head { color: #b71c1c; font-weight: 700; margin: 6px 0; }
+.redact-check-result .leak-list { list-style: none; max-height: 260px; overflow-y: auto; border: 1px solid #e0e0e0; border-radius: 6px; margin-top: 4px; }
+.redact-check-result .leak-item { display: flex; align-items: center; gap: 10px; padding: 7px 10px; border-bottom: 1px solid #f0f0f0; flex-wrap: wrap; }
+.redact-check-result .leak-item:last-child { border-bottom: none; }
+.redact-check-result .leak-pg { background: #1a73e8; color: #fff; font-size: 11px; padding: 1px 7px; border-radius: 10px; white-space: nowrap; cursor: pointer; }
+.redact-check-result .leak-cat { font-size: 11px; color: #b54708; font-weight: 700; white-space: nowrap; }
+.redact-check-result .leak-txt { flex: 1; min-width: 120px; font-family: Consolas, monospace; color: #c0392b; word-break: break-all; }
 </style>
 </head>
 <body>
@@ -506,7 +517,16 @@ body { font-family: 'Segoe UI', 'Yu Gothic UI', 'Meiryo', sans-serif; background
 
       <!-- Warning -->
       <div class="redact-warning">
-        🔒 <b>安全な仕組み</b>：ダウンロード時に全ページを画像化します。元の文字情報（テキスト層）がPDFから完全に消えるため、黒塗りの裏に隠れた文字をコピー・検索・復元することは一切できません。
+        🔒 <b>安全な仕組み</b>：ダウンロード時に全ページを画像化し、元の文字情報（テキスト層）と作成者などのメタデータをPDFから完全に削除します。黒塗りの裏に隠れた文字をコピー・検索・復元することは一切できません。
+      </div>
+
+      <!-- Pre-submission leak check -->
+      <div class="redact-check-box">
+        <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;">
+          <button class="btn btn-primary" id="btnRedactCheck" style="background:#0d7a4f;">🔎 提出前チェック（黒塗り漏れ検査）</button>
+          <span style="font-size:12.5px;color:#555;">残っている氏名・住所・電話・メール・マイナンバー・口座番号・生年月日・事件番号などを自動で探します。</span>
+        </div>
+        <div id="redactCheckResult" class="redact-check-result" style="display:none;"></div>
       </div>
 
       <!-- Output options -->
@@ -2465,6 +2485,140 @@ document.querySelectorAll('.redact-pattern-btn').forEach(btn => {
   btn.addEventListener('click', () => btn.dataset.pat === 'address' ? doAddressRedact(allPages()) : doPatternRedact(btn.dataset.pat));
 });
 
+// ===== 提出前チェック（黒塗り漏れ検査） =====
+// 残っている（黒塗りされていない）機微情報を自動で探して警告する。
+const LEAK_PATTERNS = [
+  { label: '氏名',         get: () => new RegExp(REDACT_PATTERNS.name, 'g') },
+  { label: '会社・法人名', get: () => new RegExp(REDACT_PATTERNS.company, 'g') },
+  { label: '住所',         get: () => new RegExp('(?:' + JP_PREF + ')?[一-龥々ヶ]{1,5}[市区郡][一-龥々ヶぁ-ん0-9０-９\\-－‐ーの条丁目番地号]{0,30}', 'g') },
+  { label: '郵便番号',     get: () => /〒?\s?[0-9０-９]{3}[-－][0-9０-９]{4}/g },
+  { label: '電話番号',     get: () => new RegExp(REDACT_PATTERNS.phone, 'g') },
+  { label: 'メール',       get: () => new RegExp(REDACT_PATTERNS.email, 'g') },
+  { label: 'マイナンバー等12桁', get: () => /[0-9０-９]{4}[\s　]?[0-9０-９]{4}[\s　]?[0-9０-９]{4}/g },
+  { label: '生年月日・日付', get: () => new RegExp(REDACT_PATTERNS.date, 'g') },
+  { label: '事件番号',     get: () => /(令和|平成|昭和)\s?[元0-9０-９]{1,2}\s?年?\s?[（(](ワ|ヲ|行ウ|行ケ|行コ|モ|家|家イ|家ロ|少|わ|ハ|ヨ|ナ|フ|ネ|レ|ツ)[）)]\s?第?\s?[0-9０-９]+\s?号/g },
+  { label: '口座番号らしき数字', get: () => /(?:普通|当座|口座|預金)[^0-9０-９]{0,6}[0-9０-９]{6,8}/g },
+  { label: '金額',         get: () => new RegExp(REDACT_PATTERNS.money, 'g') }
+];
+
+// 指定の正規表現にマッチする箇所の枠（ページ比率）を返す
+function findMatchBoxes(vp, items, regex) {
+  const boxes = [];
+  for (const line of groupIntoLines(items)) {
+    line.sort((a, b) => a.x - b.x);
+    let s = ''; const map = [];
+    for (const it of line) { const st = s.length; s += it.str; map.push({ start: st, end: s.length, it }); }
+    regex.lastIndex = 0; let m;
+    while ((m = regex.exec(s)) !== null) {
+      if (m[0].length === 0) { regex.lastIndex++; continue; }
+      const a = m.index, b = m.index + m[0].length;
+      let minX = Infinity, maxX = -Infinity, minY = Infinity, maxY = -Infinity;
+      for (const mm of map) {
+        if (mm.end > a && mm.start < b) {
+          const len = mm.end - mm.start;
+          const f0 = len > 0 ? (Math.max(a, mm.start) - mm.start) / len : 0;
+          const f1 = len > 0 ? (Math.min(b, mm.end) - mm.start) / len : 1;
+          minX = Math.min(minX, mm.it.x + f0 * mm.it.w); maxX = Math.max(maxX, mm.it.x + f1 * mm.it.w);
+          minY = Math.min(minY, mm.it.y); maxY = Math.max(maxY, mm.it.y + mm.it.h);
+        }
+      }
+      if (minX === Infinity) continue;
+      boxes.push({ text: m[0].trim(), x: minX / vp.width, y: minY / vp.height, w: (maxX - minX) / vp.width, h: (maxY - minY) / vp.height });
+    }
+  }
+  return boxes;
+}
+
+// 既に確定済みの黒塗りで覆われているか（面積の6割以上重なれば「覆われている」）
+function leakCovered(box, pi) {
+  const area = box.w * box.h;
+  if (area <= 0) return true;
+  let ov = 0;
+  for (const r of (redactRects[pi] || [])) {
+    const ix = Math.max(0, Math.min(box.x + box.w, r.x + r.w) - Math.max(box.x, r.x));
+    const iy = Math.max(0, Math.min(box.y + box.h, r.y + r.h) - Math.max(box.y, r.y));
+    ov += ix * iy;
+  }
+  return ov / area > 0.6;
+}
+
+document.getElementById('btnRedactCheck').addEventListener('click', async () => {
+  const out = document.getElementById('redactCheckResult');
+  out.style.display = 'block';
+  out.innerHTML = '<span style="color:#555;">検査中...</span>';
+
+  const findings = [];
+  let hadText = false;
+  for (let p = 1; p <= redactPageCount; p++) {
+    const { vp, items } = await getPageTextItems(p);
+    if (!items.length) continue;
+    hadText = true;
+    const seenKey = new Set();
+    for (const pat of LEAK_PATTERNS) {
+      for (const bx of findMatchBoxes(vp, items, pat.get())) {
+        if (leakCovered(bx, p - 1)) continue;
+        const key = `${Math.round(bx.x * 500)},${Math.round(bx.y * 500)}`;
+        if (seenKey.has(key)) continue; // 同じ位置の重複（複数パターン一致）は1件に
+        seenKey.add(key);
+        findings.push({ page: p, label: pat.label, text: bx.text, box: bx });
+      }
+    }
+  }
+
+  const riskHtml =
+    '<div class="risk-summary">' +
+    '<div><span class="ok">✅ 復元対策</span>：保存時に全ページを画像化し、テキスト層を完全削除します（コピー・検索・復元不可）。</div>' +
+    '<div><span class="ok">✅ メタデータ</span>：作成者・タイトル等の情報を削除して保存します。</div>' +
+    '</div>';
+
+  if (!hadText) {
+    out.innerHTML = riskHtml + '<div class="leak-warn-head">⚠️ このファイルは文字情報がないため、黒塗り漏れの自動検査ができません。上の「文字読み取り（OCR）」を実行してから再度お試しください。</div>';
+    return;
+  }
+  if (!findings.length) {
+    out.innerHTML = riskHtml + '<div class="ok">✅ 黒塗りされていない機微情報は見つかりませんでした。（※自動検査のため、念のため目視確認も行ってください）</div>';
+    return;
+  }
+
+  let html = riskHtml + `<div class="leak-warn-head">⚠️ 黒塗りされていない可能性のある箇所が ${findings.length} 件あります：</div>`;
+  html += '<ul class="leak-list" id="redactLeakList">';
+  findings.forEach((f, i) => {
+    const t = f.text.length > 40 ? f.text.slice(0, 40) + '…' : f.text;
+    html += `<li class="leak-item"><span class="leak-pg" data-page="${f.page}">P${f.page}</span><span class="leak-cat">${f.label}</span><span class="leak-txt">${t.replace(/</g, '&lt;')}</span><button class="btn-small-outline" data-leak="${i}" style="padding:3px 10px;font-size:12px;">候補に追加</button></li>`;
+  });
+  html += '</ul>';
+  html += '<div style="margin-top:10px;"><button class="btn btn-primary" id="btnRedactLeakAll" style="padding:7px 16px;">見つかった漏れをすべて黒塗り候補に追加</button></div>';
+  out.innerHTML = html;
+
+  // ページ番号クリックで移動
+  out.querySelectorAll('.leak-pg').forEach(el => el.addEventListener('click', async () => {
+    redactCurrentPage = +el.dataset.page;
+    await renderRedactPage(redactCurrentPage); updateRedactNav(); updateRedactInfo(); setCurrentThumb(redactCurrentPage);
+  }));
+  // 個別「候補に追加」
+  const addOne = f => {
+    const pi = f.page - 1;
+    if (!redactPending[pi]) redactPending[pi] = [];
+    const rot = redactRotation[pi] || 0;
+    // box は未回転の比率なので、そのまま保存（描画時に回転反映）
+    const pad = 0.004;
+    redactPending[pi].push({ x: Math.max(0, f.box.x - pad), y: Math.max(0, f.box.y - pad), w: f.box.w + pad * 2, h: f.box.h + pad * 2 });
+  };
+  out.querySelectorAll('[data-leak]').forEach(btn => btn.addEventListener('click', async () => {
+    addOne(findings[+btn.dataset.leak]);
+    const f = findings[+btn.dataset.leak];
+    redactCurrentPage = f.page;
+    await renderRedactPage(redactCurrentPage); updateRedactNav(); updateRedactInfo(); updatePendingBar(); setCurrentThumb(redactCurrentPage);
+    btn.textContent = '追加済み'; btn.disabled = true;
+  }));
+  document.getElementById('btnRedactLeakAll').addEventListener('click', async () => {
+    findings.forEach(addOne);
+    await renderRedactPage(redactCurrentPage); updateRedactInfo(); updatePendingBar();
+    document.getElementById('redactCheckResult').querySelectorAll('[data-leak]').forEach(b => { b.textContent = '追加済み'; b.disabled = true; });
+    document.getElementById('redactStatus').textContent = `${findings.length}件をグレー候補に追加しました。確認して「すべて黒に確定」してください。`;
+  });
+});
+
 // ===== OCR (opt-in, lazy-loaded Tesseract.js) =====
 function loadScriptOnce(src) {
   return new Promise((resolve, reject) => {
@@ -2620,9 +2774,14 @@ document.getElementById('btnRedactDownload').addEventListener('click', async () 
         pdfPage.drawImage(img, { x: 0, y: 0, width: pw, height: ph });
       }
       fill.style.width = '100%';
+      // メタデータ（作成者・タイトル・ソフト名等）を削除して保存
+      try {
+        newPdf.setTitle(''); newPdf.setAuthor(''); newPdf.setSubject('');
+        newPdf.setKeywords([]); newPdf.setProducer(''); newPdf.setCreator('');
+      } catch (e) {}
       const bytes = await newPdf.save();
       downloadBlob(new Blob([bytes], { type: 'application/pdf' }), fname + '.pdf');
-      status.textContent = '✅ ダウンロード完了（テキスト層は完全に削除済み）';
+      status.textContent = '✅ ダウンロード完了（テキスト層・メタデータを削除済み）';
     } else {
       // Image output: one file per page
       const mime = fmt === 'jpg' ? 'image/jpeg' : 'image/png';
