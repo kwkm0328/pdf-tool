@@ -380,9 +380,9 @@ body { font-family: 'Segoe UI', 'Yu Gothic UI', 'Meiryo', sans-serif; background
         <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;">
           <span style="font-size:20px;">🔎</span>
           <div style="flex:1;min-width:240px;">
-            <b style="font-size:14px;">スキャンした書類（画像のPDF）で文字を検索したいとき</b>
+            <b style="font-size:14px;">スキャンした書類や、ロゴ・画像の中の文字を検索したいとき</b>
             <p style="font-size:12.5px;color:#666;margin-top:3px;line-height:1.6;">
-              コピー機で取り込んだPDFなどは、そのままでは文字を検索できません。下のボタンで一度だけ「文字読み取り（OCR）」を実行すると、🔍言葉で探す・🎯種類で一括が使えるようになります。
+              コピー機で取り込んだPDFや、ロゴ・印影・画像内の文字（電話番号など）は、そのままでは検索で見つかりません。下のボタンで「文字読み取り（OCR）」を実行すると、画像の中の文字も🔍言葉で探す・🎯種類で一括の対象になります。
             </p>
           </div>
         </div>
@@ -2066,20 +2066,23 @@ async function getPageTextItems(pageNum) {
   const page = await redactPdfJsDoc.getPage(pageNum);
   const vp = page.getViewport({ scale: 1 });
   const tc = await page.getTextContent();
-  const items = tc.items.filter(it => it.str).map(it => {
+  const textItems = tc.items.filter(it => it.str).map(it => {
     const tx = pdfjsLib.Util.transform(vp.transform, it.transform);
     const h = Math.abs(tx[3]) > 0 ? Math.abs(tx[3]) : (it.height || 10);
     const w = it.width > 0 ? it.width : h;
     return { str: it.str, x: tx[4], y: tx[5] - h, w, h };
   });
-  if (items.length > 0) return { vp, items, source: 'text' };
-  if (redactOcrData[pageNum - 1]) return { vp, items: redactOcrData[pageNum - 1], source: 'ocr' };
-  return { vp, items: [], source: 'none' };
+  // Merge in OCR / captured-office text (covers logos & images the text layer misses)
+  const extra = redactOcrData[pageNum - 1] || [];
+  const items = extra.length ? textItems.concat(extra) : textItems;
+  const source = textItems.length ? (extra.length ? 'text+ocr' : 'text') : (extra.length ? 'ocr' : 'none');
+  return { vp, items, source };
 }
 
 // Detect text layer on first page → guide the OCR box
 async function redactDetectTextLayer() {
   const ocrBox = document.getElementById('redactOcrBox');
+  const ocrStatus = document.getElementById('redactOcrStatus');
   try {
     // Word/Excel: a text layer was already captured → no OCR needed
     if (redactHasOfficeText) {
@@ -2090,12 +2093,12 @@ async function redactDetectTextLayer() {
     const page = await redactPdfJsDoc.getPage(1);
     const tc = await page.getTextContent();
     const hasText = tc.items.some(it => it.str && it.str.trim());
+    ocrBox.style.display = 'block';
     if (hasText) {
-      ocrBox.style.display = 'none'; // text-based PDF: OCR not needed
+      // 文字PDF。ただしロゴ/画像内の文字は検索で見つからないので、OCRは任意で併用可
+      ocrStatus.textContent = 'このPDFは文字を検索できます。ロゴや画像の中の文字（電話番号など）が見つからない場合のみOCRを実行してください。';
     } else {
-      ocrBox.style.display = 'block';
-      document.getElementById('redactOcrStatus').textContent =
-        'このPDFは文字情報がありません。検索を使うにはOCRが必要です。';
+      ocrStatus.textContent = 'このPDFは文字情報がありません。検索を使うにはOCRが必要です。';
     }
   } catch (e) { /* ignore */ }
 }
@@ -2253,7 +2256,7 @@ const JP_PREF = '(?:北海道|青森県|岩手県|宮城県|秋田県|山形県|
 const ADDR_KANJI = '一-龥々ヶ〆';
 const ADDR_BODY  = '一-龥々ヶ〆ぁ-ん0-9０-９\\-－‐ーの条丁目番地号';
 const REDACT_PATTERNS = {
-  phone:  '0\\d{1,4}[-－(（]?\\d{1,4}[-－)）]?\\d{3,4}',
+  phone:  '0\\d{1,4}[\\s\\-－‐‑–—ー()（）]?\\d{1,4}[\\s\\-－‐‑–—ー()（）]?\\d{3,4}',
   postal: '〒?\\s?\\d{3}[-－]?\\d{4}',
   address: '(?:' + JP_PREF + ')?[' + ADDR_KANJI + ']{1,5}[市区郡][' + ADDR_BODY + ']{0,25}[0-9０-９号目]',
   email:  '[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\\.[A-Za-z]{2,}',
