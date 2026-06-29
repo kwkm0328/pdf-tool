@@ -162,6 +162,15 @@ body { font-family: 'Segoe UI', 'Yu Gothic UI', 'Meiryo', sans-serif; background
 .redact-out-opts label.opt-label { font-size: 13px; font-weight: 700; white-space: nowrap; }
 .redact-out-opts select { padding: 6px 10px; border: 1px solid #ddd; border-radius: 6px; font-size: 13px; }
 .redact-pending-bar { display: flex; flex-wrap: wrap; gap: 12px; align-items: center; background: #fff7e6; border: 1px solid #ffd591; border-radius: 8px; padding: 10px 16px; margin-bottom: 10px; font-size: 13px; }
+.redact-regex-help { margin-top: 10px; font-size: 13px; }
+.redact-regex-help summary { cursor: pointer; color: #1a73e8; font-weight: 600; user-select: none; }
+.redact-regex-body { margin-top: 8px; background: #f7f9fc; border: 1px solid #e0e7f1; border-radius: 8px; padding: 12px 14px; }
+.redact-regex-body p { color: #444; line-height: 1.7; margin: 0 0 8px; }
+.redact-regex-body table { border-collapse: collapse; width: 100%; margin: 6px 0; }
+.redact-regex-body th, .redact-regex-body td { border: 1px solid #d8e0ec; padding: 5px 8px; text-align: left; font-size: 12.5px; vertical-align: top; }
+.redact-regex-body th { background: #eef3fb; font-weight: 700; }
+.redact-regex-body code { background: #fff; border: 1px solid #d8e0ec; border-radius: 4px; padding: 1px 5px; font-family: Consolas, monospace; color: #c0392b; }
+.redact-regex-note { color: #1565c0 !important; background: #fff; border-radius: 6px; padding: 8px 10px; margin-top: 8px !important; }
 </style>
 </head>
 <body>
@@ -387,17 +396,34 @@ body { font-family: 'Segoe UI', 'Yu Gothic UI', 'Meiryo', sans-serif; background
       <!-- METHOD 1: keyword / regex search -->
       <div class="split-source redact-method" style="margin-bottom:12px;">
         <div class="section-title">🔍 ① 言葉で探して黒塗り</div>
-        <p style="font-size:13px;color:#666;margin:8px 0 12px;">隠したい名前・住所などを入力すると、その箇所を<b>グレーの候補</b>として表示します（クリックで黒塗りに確定）。<br>「川上健太」で「川上 健太」「川　上　健　太」のように<b>間にスペースがあっても</b>見つけます。</p>
+        <p style="font-size:13px;color:#666;margin:8px 0 12px;">隠したい名前・住所などを入力すると、その箇所を<b>グレーの候補</b>として表示します（クリックで黒塗りに確定）。<br>「山田太郎」で「山田 太郎」「山　田　太　郎」のように<b>間にスペースがあっても</b>見つけます。</p>
         <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;">
           <input type="text" id="redactSearchTerm" placeholder="例：山田太郎"
             style="flex:1;min-width:220px;padding:8px 12px;border:1px solid #ddd;border-radius:6px;font-size:14px;">
           <label style="font-size:13px;display:flex;align-items:center;gap:5px;white-space:nowrap;cursor:pointer;">
             <input type="checkbox" id="redactSearchCase" style="width:14px;height:14px;"> 大小文字を区別
           </label>
-          <label style="font-size:13px;display:flex;align-items:center;gap:5px;white-space:nowrap;cursor:pointer;" title="電話番号や日付などのパターンを自分で指定したい上級者向け">
+          <label style="font-size:13px;display:flex;align-items:center;gap:5px;white-space:nowrap;cursor:pointer;" title="複数の言葉や、数字○桁などの形で探したい上級者向け">
             <input type="checkbox" id="redactSearchRegex" style="width:14px;height:14px;"> 正規表現で検索
           </label>
         </div>
+
+        <!-- Regex help (collapsible) -->
+        <details class="redact-regex-help">
+          <summary>「正規表現で検索」とは？（クリックで使い方）</summary>
+          <div class="redact-regex-body">
+            <p>具体的な言葉ではなく「<b>こういう形の文字列</b>」をまとめて探す上級者向けの書き方です。普段は<b>チェック不要</b>（チェックしない方が、スペース無視の通常検索が使えます）。</p>
+            <table>
+              <tr><th>入力する記号</th><th>意味</th><th>例：ヒットするもの</th></tr>
+              <tr><td><code>山田|佐藤|鈴木</code></td><td>いずれか（縦棒＝または）</td><td>山田・佐藤・鈴木をまとめて</td></tr>
+              <tr><td><code>\d</code></td><td>数字1文字</td><td>0〜9のどれか</td></tr>
+              <tr><td><code>\d{4}年</code></td><td>数字4桁＋年</td><td>2024年 / 1999年</td></tr>
+              <tr><td><code>甲\d+号証</code></td><td>甲＋数字＋号証</td><td>甲1号証 / 甲25号証</td></tr>
+              <tr><td><code>\d{2,4}-\d{2,4}-\d{4}</code></td><td>電話番号の形</td><td>03-1234-5678 / 090-1111-2222</td></tr>
+            </table>
+            <p class="redact-regex-note">💡 電話番号・住所・日付などよくある形は、下の「🎯 種類で一括」ボタンで正規表現を知らなくても黒塗りできます。</p>
+          </div>
+        </details>
         <div style="display:flex;gap:10px;margin-top:10px;flex-wrap:wrap;align-items:center;">
           <button class="btn btn-secondary" id="btnRedactSearchPage" style="padding:8px 18px;">このページだけ</button>
           <button class="btn btn-primary" id="btnRedactSearchAll" style="padding:8px 18px;">全ページから探して黒塗り</button>
@@ -2100,11 +2126,15 @@ document.getElementById('redactSearchTerm').addEventListener('keydown', e => {
 
 // ===== METHOD 2: pattern presets =====
 const JP_PREF = '(?:北海道|青森県|岩手県|宮城県|秋田県|山形県|福島県|茨城県|栃木県|群馬県|埼玉県|千葉県|東京都|神奈川県|新潟県|富山県|石川県|福井県|山梨県|長野県|岐阜県|静岡県|愛知県|三重県|滋賀県|京都府|大阪府|兵庫県|奈良県|和歌山県|鳥取県|島根県|岡山県|広島県|山口県|徳島県|香川県|愛媛県|高知県|福岡県|佐賀県|長崎県|熊本県|大分県|宮崎県|鹿児島県|沖縄県)';
+// 住所：都道府県（任意）→ 市区郡 → 丁目番地号まで。
+// 開始位置は「漢字だけ」に限定するため、ラベル（場所）やカタカナの建物名
+// （例：ホテル札幌ガーデンパレス）を巻き込まず、市区名から正しく始まります。
+const ADDR_KANJI = '一-龥々ヶ〆';
+const ADDR_BODY  = '一-龥々ヶ〆ぁ-ん0-9０-９\\-－‐ーの条丁目番地号';
 const REDACT_PATTERNS = {
   phone:  '0\\d{1,4}[-－(（]?\\d{1,4}[-－)）]?\\d{3,4}',
   postal: '〒?\\s?\\d{3}[-－]?\\d{4}',
-  // 住所：都道府県（任意）＋市区町村＋丁目番地号などの番地表記まで
-  address: JP_PREF + '?[^\\s　]{1,18}?[市区郡町村][^\\s　]{0,18}?[0-9０-９]+(?:[-－‐ー条丁目番地号の][0-9０-９]*)+号?',
+  address: '(?:' + JP_PREF + ')?[' + ADDR_KANJI + ']{1,5}[市区郡][' + ADDR_BODY + ']{0,25}[0-9０-９号目]',
   email:  '[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\\.[A-Za-z]{2,}',
   date:   '(令和|平成|昭和|R|H|S)?\\s?\\d{1,4}\\s?年\\s?\\d{1,2}\\s?月\\s?\\d{1,2}\\s?日|\\d{4}[\\/.\\-年]\\d{1,2}[\\/.\\-月]\\d{1,2}日?',
   money:  '[¥￥]\\s?[\\d,，]+|[\\d,，]+\\s?円'
