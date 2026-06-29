@@ -183,6 +183,13 @@ body { font-family: 'Segoe UI', 'Yu Gothic UI', 'Meiryo', sans-serif; background
 .redact-check-result .leak-pg { background: #1a73e8; color: #fff; font-size: 11px; padding: 1px 7px; border-radius: 10px; white-space: nowrap; cursor: pointer; }
 .redact-check-result .leak-cat { font-size: 11px; color: #b54708; font-weight: 700; white-space: nowrap; }
 .redact-check-result .leak-txt { flex: 1; min-width: 120px; font-family: Consolas, monospace; color: #c0392b; word-break: break-all; }
+/* One-click auto redaction */
+.redact-auto-box { background: linear-gradient(135deg,#eef6ff,#f3ecff); border: 1px solid #cfe2ff; border-radius: 10px; padding: 14px 18px; margin-bottom: 14px; text-align: center; }
+.redact-auto-box #btnRedactAuto { background: linear-gradient(135deg,#1a73e8,#7b3ff2); color: #fff; font-size: 15px; padding: 12px 26px; }
+.redact-auto-box #btnRedactAuto:hover { filter: brightness(1.07); }
+.redact-auto-box p { font-size: 12.5px; color: #555; margin: 8px 0 4px; line-height: 1.6; }
+/* Review wizard */
+.redact-wizard-bar { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; background: #e9f7f0; border: 1px solid #a9dcc4; border-radius: 8px; padding: 10px 16px; margin-bottom: 10px; font-size: 13px; }
 /* Before/After comparison */
 .compare-content { background: #fff; border-radius: 12px; padding: 16px 18px; width: 94vw; max-width: 1200px; height: 92vh; display: flex; flex-direction: column; }
 .compare-header { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; padding-bottom: 12px; border-bottom: 1px solid #e0e0e0; }
@@ -398,6 +405,13 @@ body { font-family: 'Segoe UI', 'Yu Gothic UI', 'Meiryo', sans-serif; background
         <div class="redact-guide-note">💡 文字をコピーしようとしても取り出せない状態（画像化）で保存されます。隠した文字が裏から復元される心配はありません。</div>
       </div>
 
+      <!-- One-click auto redaction -->
+      <div class="redact-auto-box">
+        <button class="btn" id="btnRedactAuto">🪄 おまかせ黒塗り（よくある個人情報＋案件辞書を一括検出）</button>
+        <p>電話・住所・会社名・氏名・メール・日付・金額（＋選択中の案件辞書）を<b>まとめて候補化</b>します。出てきたグレーを確認して確定してください。</p>
+        <span id="redactAutoStatus" style="font-size:13px;color:#0d7a4f;font-weight:600;"></span>
+      </div>
+
       <!-- OCR opt-in (for scanned PDFs) -->
       <div class="redact-ocr-box" id="redactOcrBox">
         <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;">
@@ -493,9 +507,23 @@ body { font-family: 'Segoe UI', 'Yu Gothic UI', 'Meiryo', sans-serif; background
 
       <!-- Pending candidates bar (shown only when candidates exist) -->
       <div class="redact-pending-bar" id="redactPendingBar" style="display:none;">
-        <span>⬜ グレーの候補 <b id="redactPendingCount">0</b> 件 — クリックで1つずつ黒に確定できます</span>
+        <span>⬜ グレーの候補 <b id="redactPendingCount">0</b> 件</span>
+        <button class="btn btn-primary" id="btnRedactReview" style="padding:6px 14px;font-size:13px;background:#0d7a4f;">▶ 1件ずつ確認</button>
         <button class="btn btn-primary" id="btnRedactConfirmAll" style="padding:6px 14px;font-size:13px;">すべて黒に確定</button>
         <button class="btn-small-outline" id="btnRedactDiscardPending">候補を消す</button>
+      </div>
+
+      <!-- Review wizard bar (shown during 1-by-1 review) -->
+      <div class="redact-wizard-bar" id="redactWizardBar" style="display:none;">
+        <span id="redactWizardCount" style="font-weight:700;white-space:nowrap;"></span>
+        <span style="font-size:12.5px;color:#555;">この候補を：</span>
+        <button class="btn btn-primary" id="btnWizConfirm" style="padding:6px 14px;font-size:13px;">黒に確定 (Enter)</button>
+        <button class="btn-small-outline" id="btnWizSkip">スキップ (→)</button>
+        <button class="btn-small-outline" id="btnWizPrev">← 戻る</button>
+        <button class="btn-small-outline" id="btnWizDelete" style="border-color:#e57373;color:#c62828;">この候補を削除</button>
+        <div class="redact-toolbar-sep"></div>
+        <button class="btn btn-secondary" id="btnWizFinishConfirm" style="padding:6px 14px;font-size:13px;">残り全部を確定して終了</button>
+        <button class="btn-small-outline" id="btnWizClose">終了</button>
       </div>
 
       <!-- METHOD 3 toolbar: manual -->
@@ -504,6 +532,7 @@ body { font-family: 'Segoe UI', 'Yu Gothic UI', 'Meiryo', sans-serif; background
         <span style="font-size:12.5px;color:#666;">画面上でドラッグして囲む／右クリックで削除</span>
         <div class="redact-toolbar-sep"></div>
         <button class="btn-small-outline" id="btnRedactUndo">↩ 元に戻す (Ctrl+Z)</button>
+        <button class="btn-small-outline" id="btnRedactSamePos" title="このページの黒塗りを全ページの同じ位置にもコピー（レターヘッド・フッター等）">📑 全ページ同じ位置に</button>
         <button class="btn btn-secondary" id="btnRedactClearPage" style="padding:6px 14px;font-size:13px;">このページの黒塗りを消す</button>
         <button class="btn btn-danger" id="btnRedactClearAll" style="padding:6px 14px;font-size:13px;">全部消す</button>
       </div>
@@ -1728,6 +1757,9 @@ async function handleRedactFile(file) {
     redactPending = {};
     redactZoom = 1;
     redactHasOfficeText = false;
+    redactWiz = null; redactWizRect = null;
+    document.getElementById('redactWizardBar').style.display = 'none';
+    document.getElementById('redactAutoStatus').textContent = '';
 
     // Use captured office text as a virtual text layer (no OCR needed)
     if (capturedOfficeText && Object.keys(capturedOfficeText).length) {
@@ -1809,6 +1841,16 @@ function drawRedactOverlay(pageNum) {
     ctx.setLineDash([4, 3]);
     ctx.strokeRect(x + 0.5, y + 0.5, w - 1, h - 1);
     ctx.setLineDash([]);
+  }
+  // Review wizard: spotlight the current candidate (orange)
+  if (redactWizRect) {
+    const arr = redactPending[pageNum - 1] || [];
+    if (arr.indexOf(redactWizRect) >= 0) {
+      const m = mapRectFrac(redactWizRect, rot);
+      const x = m.x * cvs.width, y = m.y * cvs.height, w = m.w * cvs.width, h = m.h * cvs.height;
+      ctx.strokeStyle = '#ff6d00'; ctx.lineWidth = 3; ctx.setLineDash([]);
+      ctx.strokeRect(x - 2, y - 2, w + 4, h + 4);
+    }
   }
   // Resize handles on the hovered rect (corners)
   if (redactHover) {
@@ -2064,6 +2106,151 @@ document.getElementById('btnRedactDiscardPending').addEventListener('click', () 
   redactPending = {};
   drawRedactOverlay(redactCurrentPage);
   updatePendingBar();
+});
+
+// ===== 全ページ同じ位置に黒塗り（レターヘッド・フッター用） =====
+document.getElementById('btnRedactSamePos').addEventListener('click', () => {
+  const pi = redactCurrentPage - 1;
+  const src = redactRects[pi] || [];
+  if (!src.length) { document.getElementById('redactStatus').textContent = 'まず現在のページに黒塗りを1つ以上引いてください。'; return; }
+  if (redactPageCount <= 1) { document.getElementById('redactStatus').textContent = 'ページが1枚のため、コピー先がありません。'; return; }
+  if (!confirm(`現在のページの黒塗り ${src.length}個 を、他の全ページの同じ位置にもコピーします。よろしいですか？`)) return;
+  let added = 0;
+  const key = r => `${Math.round(r.x * 1000)},${Math.round(r.y * 1000)},${Math.round(r.w * 1000)}`;
+  for (let p = 0; p < redactPageCount; p++) {
+    if (p === pi) continue;
+    if (!redactRects[p]) redactRects[p] = [];
+    const seen = new Set(redactRects[p].map(key));
+    pushUndo(p);
+    for (const r of src) {
+      const c = { x: r.x, y: r.y, w: r.w, h: r.h };
+      if (seen.has(key(c))) continue;
+      redactRects[p].push(c); seen.add(key(c)); added++;
+    }
+  }
+  drawRedactOverlay(redactCurrentPage);
+  updateRedactInfo();
+  (async () => { for (let i = 1; i <= redactPageCount; i++) await renderOneThumb(i); })();
+  document.getElementById('redactStatus').textContent = `全ページの同じ位置に ${added}個 の黒塗りをコピーしました。`;
+});
+
+// ===== 🪄 おまかせ黒塗り（標準パターン＋案件辞書を一括） =====
+document.getElementById('btnRedactAuto').addEventListener('click', async () => {
+  const status = document.getElementById('redactAutoStatus');
+  if (!redactPdfJsDoc) { status.textContent = '先にファイルを読み込んでください'; return; }
+  status.textContent = 'おまかせ検出中...';
+  const before = pendingCount();
+  // 標準パターン（住所はブロック検出なので別途）＋ 辞書語を1つの正規表現に
+  const parts = [REDACT_PATTERNS.phone, REDACT_PATTERNS.email, REDACT_PATTERNS.date, REDACT_PATTERNS.money, REDACT_PATTERNS.company, REDACT_PATTERNS.name];
+  const dictTerms = (document.getElementById('redactCaseTerms').value || '')
+    .split(/\r?\n/).map(t => t.trim()).filter(Boolean).map(spaceTolerantPattern).filter(Boolean);
+  const alts = parts.concat(dictTerms);
+  const re = new RegExp(alts.map(a => '(?:' + a + ')').join('|'), 'gi');
+  const getRanges = (s) => {
+    const out = []; re.lastIndex = 0; let m;
+    while ((m = re.exec(s)) !== null) { if (m[0].length === 0) { re.lastIndex++; continue; } out.push([m.index, m.index + m[0].length]); }
+    return out;
+  };
+  await redactByMatcher(allPages(), getRanges, document.getElementById('redactSearchStatus'));
+  await doAddressRedact(allPages()); // 住所ブロック
+  const added = pendingCount() - before;
+  status.textContent = `✅ ${added}件の候補を表示しました。「▶ 1件ずつ確認」または各候補をクリックで確定してください。`;
+});
+
+// ===== ▶ 候補レビュー・ウィザード =====
+let redactWiz = null; // { list:[{page,rect}], idx }
+let redactWizRect = null; // highlighted rect (object ref) on current page
+
+function collectPendingList() {
+  const list = [];
+  for (let p = 1; p <= redactPageCount; p++) {
+    const arr = (redactPending[p - 1] || []).slice().sort((a, b) => a.y - b.y || a.x - b.x);
+    for (const r of arr) list.push({ page: p, rect: r });
+  }
+  return list;
+}
+
+async function wizGoto(idx) {
+  if (!redactWiz) return;
+  // skip entries whose rect was already removed/confirmed
+  while (idx < redactWiz.list.length) {
+    const e = redactWiz.list[idx];
+    if ((redactPending[e.page - 1] || []).indexOf(e.rect) >= 0) break;
+    idx++;
+  }
+  if (idx >= redactWiz.list.length) { wizFinish('確認が終わりました'); return; }
+  redactWiz.idx = idx;
+  const e = redactWiz.list[idx];
+  redactCurrentPage = e.page;
+  redactWizRect = e.rect;
+  await renderRedactPage(e.page);
+  updateRedactNav(); updateRedactInfo(); setCurrentThumb(e.page);
+  // scroll the highlighted rect into view
+  const oc = document.getElementById('redactOverlayCanvas');
+  const m = mapRectFrac(e.rect, redactRotation[e.page - 1] || 0);
+  const outer = document.getElementById('redactCanvasOuter');
+  const cont = document.getElementById('redactCanvasContainer');
+  outer.scrollTop = Math.max(0, cont.offsetTop + (m.y + m.h / 2) * oc.height - outer.clientHeight / 2);
+  outer.scrollLeft = Math.max(0, cont.offsetLeft + (m.x + m.w / 2) * oc.width - outer.clientWidth / 2);
+  const remaining = redactWiz.list.filter((x, i) => i >= idx && (redactPending[x.page - 1] || []).indexOf(x.rect) >= 0).length;
+  document.getElementById('redactWizardCount').textContent = `候補 ${idx + 1} / ${redactWiz.list.length}（P${e.page}）`;
+}
+
+function wizStart() {
+  const list = collectPendingList();
+  if (!list.length) { document.getElementById('redactStatus').textContent = '確認する候補がありません。'; return; }
+  redactWiz = { list, idx: 0 };
+  document.getElementById('redactWizardBar').style.display = 'flex';
+  wizGoto(0);
+}
+function wizFinish(msg) {
+  redactWiz = null; redactWizRect = null;
+  document.getElementById('redactWizardBar').style.display = 'none';
+  drawRedactOverlay(redactCurrentPage);
+  updatePendingBar(); updateRedactInfo();
+  if (msg) document.getElementById('redactStatus').textContent = msg;
+}
+function wizConfirmCurrent() {
+  if (!redactWiz) return;
+  const e = redactWiz.list[redactWiz.idx];
+  const arr = redactPending[e.page - 1] || [];
+  const i = arr.indexOf(e.rect);
+  if (i >= 0) {
+    pushUndo(e.page - 1);
+    if (!redactRects[e.page - 1]) redactRects[e.page - 1] = [];
+    redactRects[e.page - 1].push(e.rect);
+    arr.splice(i, 1);
+    renderOneThumb(e.page);
+  }
+  wizGoto(redactWiz.idx + 1);
+}
+function wizDeleteCurrent() {
+  if (!redactWiz) return;
+  const e = redactWiz.list[redactWiz.idx];
+  const arr = redactPending[e.page - 1] || [];
+  const i = arr.indexOf(e.rect);
+  if (i >= 0) arr.splice(i, 1);
+  wizGoto(redactWiz.idx + 1);
+}
+
+document.getElementById('btnRedactReview').addEventListener('click', wizStart);
+document.getElementById('btnWizConfirm').addEventListener('click', wizConfirmCurrent);
+document.getElementById('btnWizSkip').addEventListener('click', () => redactWiz && wizGoto(redactWiz.idx + 1));
+document.getElementById('btnWizPrev').addEventListener('click', () => redactWiz && wizGoto(Math.max(0, redactWiz.idx - 1)));
+document.getElementById('btnWizDelete').addEventListener('click', wizDeleteCurrent);
+document.getElementById('btnWizClose').addEventListener('click', () => wizFinish(''));
+document.getElementById('btnWizFinishConfirm').addEventListener('click', () => {
+  document.getElementById('btnRedactConfirmAll').click();
+  wizFinish('残りの候補をすべて確定しました。');
+});
+document.addEventListener('keydown', e => {
+  if (!redactWiz) return;
+  if (!document.querySelector('.tab[data-tab="redact"].active')) return;
+  if (e.key === 'Enter') { e.preventDefault(); wizConfirmCurrent(); }
+  else if (e.key === 'ArrowRight') { e.preventDefault(); wizGoto(redactWiz.idx + 1); }
+  else if (e.key === 'ArrowLeft') { e.preventDefault(); wizGoto(Math.max(0, redactWiz.idx - 1)); }
+  else if (e.key === 'Delete' || e.key === 'Backspace') { e.preventDefault(); wizDeleteCurrent(); }
+  else if (e.key === 'Escape') { e.preventDefault(); wizFinish(''); }
 });
 
 // ===== THUMBNAILS =====
@@ -3025,6 +3212,9 @@ document.getElementById('btnClearRedact').addEventListener('click', () => {
   redactHasOfficeText = false;
   redactOfficeTextByPage = null;
   redactOfficeTextBase = 0;
+  redactWiz = null; redactWizRect = null;
+  document.getElementById('redactWizardBar').style.display = 'none';
+  document.getElementById('redactAutoStatus').textContent = '';
   document.getElementById('redactThumbs').innerHTML = '';
   document.getElementById('redactPendingBar').style.display = 'none';
   document.getElementById('redactWorkArea').style.display = 'none';
