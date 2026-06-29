@@ -471,6 +471,23 @@ body { font-family: 'Segoe UI', 'Yu Gothic UI', 'Meiryo', sans-serif; background
         <span id="redactPatternStatus" style="font-size:13px;color:#555;display:inline-block;margin-top:8px;"></span>
       </div>
 
+      <!-- METHOD 3: case dictionary -->
+      <details class="split-source redact-method" style="margin-bottom:12px;">
+        <summary style="cursor:pointer;font-weight:700;font-size:16px;color:#333;list-style:none;">📁 ③ 案件別辞書（よく消す語を案件ごとに登録）</summary>
+        <p style="font-size:13px;color:#666;margin:10px 0 12px;">離婚・相続・交通事故など、案件ごとに「子の氏名・住所・口座番号」などを登録しておくと、書類を読み込むたびにワンクリックで候補化できます。<b>登録内容はこのパソコンのブラウザ内だけに保存</b>され、外部には送信されません。</p>
+        <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-bottom:8px;">
+          <select id="redactCaseSelect" class="modern-select" style="min-width:200px;padding:7px 10px;border:1px solid #ddd;border-radius:6px;font-size:14px;"></select>
+          <button class="btn-small-outline" id="btnCaseNew">＋ 新規案件</button>
+          <button class="btn-small-outline" id="btnCaseRename">名前変更</button>
+          <button class="btn-small-outline" id="btnCaseDelete" style="border-color:#e57373;color:#c62828;">削除</button>
+        </div>
+        <textarea id="redactCaseTerms" rows="6" placeholder="1行に1つずつ、消したい語を入力します。&#10;例：&#10;山田太郎&#10;旭川市末広4条&#10;1234567&#10;〇〇小学校" style="width:100%;box-sizing:border-box;padding:8px 12px;border:1px solid #ddd;border-radius:6px;font-size:14px;font-family:inherit;line-height:1.6;resize:vertical;"></textarea>
+        <div style="display:flex;gap:10px;margin-top:10px;flex-wrap:wrap;align-items:center;">
+          <button class="btn btn-primary" id="btnCaseSearch">この辞書で全ページ検索</button>
+          <span id="redactCaseStatus" style="font-size:13px;color:#555;"></span>
+        </div>
+      </details>
+
       <!-- Info bar -->
       <div class="redact-info-bar" id="redactInfoBar">ファイルを読み込み中...</div>
 
@@ -2347,6 +2364,21 @@ async function redactByMatcher(pages, getRanges, statusEl) {
 // ===== METHOD 1: keyword / regex search =====
 function allPages() { return Array.from({ length: redactPageCount }, (_, i) => i + 1); }
 
+// 1文字を、半角/全角の数字を相互に許容する正規表現片に変換
+const FULL_DIGITS = '０１２３４５６７８９';
+function charToPattern(ch) {
+  if (ch >= '0' && ch <= '9') return '[' + ch + FULL_DIGITS[ch.charCodeAt(0) - 48] + ']';
+  const fi = FULL_DIGITS.indexOf(ch);
+  if (fi >= 0) return '[' + fi + ch + ']';
+  return ch.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+// 語を「スペース無視＋全半角数字許容」のパターンに（空白は無視、文字間は任意の空白を許容）
+function spaceTolerantPattern(term) {
+  const s = term.replace(/[\s　]+/g, '');
+  if (!s) return '';
+  return Array.from(s).map(charToPattern).join('[\\s\\u3000]*');
+}
+
 async function doKeywordSearch(pages) {
   const raw = document.getElementById('redactSearchTerm').value;
   const status = document.getElementById('redactSearchStatus');
@@ -2369,13 +2401,10 @@ async function doKeywordSearch(pages) {
       return out;
     };
   } else {
-    // Space-tolerant: ignore spaces in the term and allow any whitespace
-    // (half/full-width spaces, tabs) between each character in the document.
-    // e.g. "川上健太" matches "川上 健太" / "川　上　健　太".
-    const stripped = raw.replace(/[\s　]+/g, '');
-    if (!stripped) { status.textContent = '⚠️ 探す言葉を入力してください'; return; }
-    const esc = c => c.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-    const pattern = Array.from(stripped).map(esc).join('[\\s\\u3000]*');
+    // Space-tolerant + 全半角数字許容。
+    // 例：「川上健太」→「川上 健太」「川　上　健　太」、「1234」→「１２３４」もヒット。
+    const pattern = spaceTolerantPattern(raw);
+    if (!pattern) { status.textContent = '⚠️ 探す言葉を入力してください'; return; }
     const re = new RegExp(pattern, caseSensitive ? 'g' : 'gi');
     getRanges = (s) => {
       const out = []; re.lastIndex = 0; let m;
@@ -2523,6 +2552,98 @@ async function doAddressRedact(pages) {
 document.querySelectorAll('.redact-pattern-btn').forEach(btn => {
   btn.addEventListener('click', () => btn.dataset.pat === 'address' ? doAddressRedact(allPages()) : doPatternRedact(btn.dataset.pat));
 });
+
+// ===== METHOD 3: 案件別辞書（localStorage に保存） =====
+const CASE_STORE_KEY = 'redactCaseDicts_v1';
+function caseLoadAll() { try { return JSON.parse(localStorage.getItem(CASE_STORE_KEY)) || {}; } catch (e) { return {}; } }
+function caseSaveAll(obj) { try { localStorage.setItem(CASE_STORE_KEY, JSON.stringify(obj)); } catch (e) { alert('保存に失敗しました: ' + e.message); } }
+function caseEscHtml(s) { return s.replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c])); }
+
+function caseRefreshSelect(selectName) {
+  const cases = caseLoadAll();
+  const names = Object.keys(cases);
+  const sel = document.getElementById('redactCaseSelect');
+  sel.innerHTML = '<option value="">（案件を選択）</option>' +
+    names.map(n => `<option value="${caseEscHtml(n)}"${n === selectName ? ' selected' : ''}>${caseEscHtml(n)}</option>`).join('');
+  const ta = document.getElementById('redactCaseTerms');
+  const cur = sel.value;
+  ta.value = cur ? (cases[cur] || '') : '';
+  ta.disabled = !cur;
+}
+
+document.getElementById('redactCaseSelect').addEventListener('change', () => {
+  const cases = caseLoadAll();
+  const name = document.getElementById('redactCaseSelect').value;
+  const ta = document.getElementById('redactCaseTerms');
+  ta.value = name ? (cases[name] || '') : '';
+  ta.disabled = !name;
+});
+
+document.getElementById('redactCaseTerms').addEventListener('input', () => {
+  const name = document.getElementById('redactCaseSelect').value;
+  if (!name) return;
+  const cases = caseLoadAll();
+  cases[name] = document.getElementById('redactCaseTerms').value;
+  caseSaveAll(cases);
+});
+
+document.getElementById('btnCaseNew').addEventListener('click', () => {
+  const name = (prompt('案件名を入力してください（例：山田離婚事件）') || '').trim();
+  if (!name) return;
+  const cases = caseLoadAll();
+  if (cases[name] === undefined) cases[name] = '';
+  caseSaveAll(cases);
+  caseRefreshSelect(name);
+});
+
+document.getElementById('btnCaseRename').addEventListener('click', () => {
+  const old = document.getElementById('redactCaseSelect').value;
+  if (!old) { alert('名前を変更する案件を選んでください'); return; }
+  const name = (prompt('新しい案件名', old) || '').trim();
+  if (!name || name === old) return;
+  const cases = caseLoadAll();
+  cases[name] = cases[old] || '';
+  delete cases[old];
+  caseSaveAll(cases);
+  caseRefreshSelect(name);
+});
+
+document.getElementById('btnCaseDelete').addEventListener('click', () => {
+  const name = document.getElementById('redactCaseSelect').value;
+  if (!name) { alert('削除する案件を選んでください'); return; }
+  if (!confirm(`案件「${name}」の辞書を削除しますか？`)) return;
+  const cases = caseLoadAll();
+  delete cases[name];
+  caseSaveAll(cases);
+  caseRefreshSelect('');
+});
+
+document.getElementById('btnCaseSearch').addEventListener('click', () => {
+  const status = document.getElementById('redactCaseStatus');
+  if (!redactPdfJsDoc) { status.textContent = '先にファイルを読み込んでください'; return; }
+  const text = document.getElementById('redactCaseTerms').value;
+  const terms = text.split(/\r?\n/).map(t => t.trim()).filter(Boolean);
+  if (!terms.length) { status.textContent = '⚠️ 辞書に語が登録されていません'; return; }
+  status.textContent = '辞書で検索中...';
+  // 各語をスペース無視＋全半角数字許容のパターンにして1つの正規表現にまとめる
+  const alts = terms.map(spaceTolerantPattern).filter(Boolean);
+  let re;
+  try { re = new RegExp(alts.map(a => '(?:' + a + ')').join('|'), 'gi'); }
+  catch (e) { status.textContent = 'エラー: ' + e.message; return; }
+  const getRanges = (s) => {
+    const out = []; re.lastIndex = 0; let m;
+    while ((m = re.exec(s)) !== null) {
+      if (m[0].length === 0) { re.lastIndex++; continue; }
+      out.push([m.index, m.index + m[0].length]);
+    }
+    return out;
+  };
+  redactByMatcher(allPages(), getRanges, status).then(n => {
+    if (n > 0) status.textContent = `辞書から ${n}箇所 検出（グレー）。クリックで確定`;
+  });
+});
+
+caseRefreshSelect(''); // 初期化
 
 // ===== 提出前チェック（黒塗り漏れ検査） =====
 // 残っている（黒塗りされていない）機微情報を自動で探して警告する。
