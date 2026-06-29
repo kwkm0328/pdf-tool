@@ -132,6 +132,20 @@ body { font-family: 'Segoe UI', 'Yu Gothic UI', 'Meiryo', sans-serif; background
 .redact-warning { font-size: 12px; color: #b71c1c; background: #fff3f3; border: 1px solid #ffcdd2; border-radius: 6px; padding: 8px 12px; margin-top: 10px; }
 .btn-small-outline { background: white; border: 1.5px solid #999; color: #333; padding: 6px 14px; border-radius: 6px; font-size: 13px; font-weight: 600; cursor: pointer; transition: all 0.2s; white-space: nowrap; }
 .btn-small-outline:hover { background: #f5f5f5; border-color: #666; }
+.redact-guide { background: #f0f7ff; border: 1px solid #cfe2ff; border-radius: 10px; padding: 16px 20px; margin-bottom: 14px; }
+.redact-guide strong { font-size: 15px; color: #0d47a1; }
+.redact-guide ol { margin: 10px 0 0; padding-left: 22px; }
+.redact-guide li { font-size: 13.5px; color: #333; margin-bottom: 7px; line-height: 1.7; }
+.redact-guide-methods { display: inline-flex; gap: 6px; flex-wrap: wrap; margin-left: 4px; vertical-align: middle; }
+.redact-guide-methods span { background: #fff; border: 1px solid #cfe2ff; border-radius: 20px; padding: 1px 10px; font-size: 12px; color: #1a73e8; font-weight: 600; }
+.redact-guide-note { font-size: 12.5px; color: #1565c0; background: #fff; border-radius: 6px; padding: 8px 12px; margin-top: 10px; line-height: 1.6; }
+.redact-ocr-box { background: #fffaf0; border: 1px solid #ffe0a3; border-radius: 10px; padding: 14px 18px; margin-bottom: 14px; }
+.redact-method { border-left: 3px solid #1a73e8; }
+.redact-pattern-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 10px; }
+.redact-pattern-btn { background: #fff; border: 1.5px solid #1a73e8; color: #1a73e8; padding: 10px 14px; border-radius: 8px; font-size: 14px; font-weight: 600; cursor: pointer; transition: all 0.2s; text-align: center; }
+.redact-pattern-btn:hover:not(:disabled) { background: #e8f0fe; }
+.redact-pattern-btn:disabled { border-color: #ccc; color: #bbb; cursor: not-allowed; }
+.redact-zoom-btn { width: 36px; padding: 6px 0; text-align: center; font-size: 16px; }
 </style>
 </head>
 <body>
@@ -306,8 +320,9 @@ body { font-family: 'Segoe UI', 'Yu Gothic UI', 'Meiryo', sans-serif; background
   <div id="redact" class="panel">
     <div class="upload-area" id="redactUpload">
       <div class="icon">🖊️</div>
-      <p>黒塗りするPDFをドラッグ＆ドロップ、またはクリックして選択</p>
-      <input type="file" id="redactFileInput" accept=".pdf">
+      <p>黒塗りするファイルをドラッグ＆ドロップ、またはクリックして選択</p>
+      <p class="hint" style="margin-top:8px">PDF / 画像（JPG・PNG等）/ Word / Excel に対応</p>
+      <input type="file" id="redactFileInput" accept=".pdf,.jpg,.jpeg,.png,.bmp,.gif,.webp,.doc,.docx,.xls,.xlsx,.xlsm,.csv">
     </div>
 
     <div id="redactWorkArea" style="display:none">
@@ -317,53 +332,101 @@ body { font-family: 'Segoe UI', 'Yu Gothic UI', 'Meiryo', sans-serif; background
         <div class="info" id="redactFileInfo"></div>
       </div>
 
-      <!-- Toolbar -->
-      <div class="redact-toolbar">
-        <!-- Auto section -->
-        <span class="redact-toolbar-label">🤖 自動検出</span>
-        <label style="font-size:13px;white-space:nowrap;">フォントサイズ</label>
-        <input type="number" id="redactFontThreshold" value="0" min="0" max="500" step="1"
-          style="width:58px;padding:5px 8px;border:1px solid #ddd;border-radius:6px;font-size:13px;"
-          title="0 = 全文字を対象">
-        <span style="font-size:12px;color:#888;white-space:nowrap;">pt 以上 (0=全文)</span>
-        <button class="btn btn-secondary" id="btnRedactAutoPage" style="padding:6px 14px;font-size:13px;">このページ</button>
-        <button class="btn btn-secondary" id="btnRedactAutoAll" style="padding:6px 14px;font-size:13px;">全ページ</button>
-
-        <div class="redact-toolbar-sep"></div>
-
-        <!-- Manual section -->
-        <span class="redact-toolbar-label">✏️ 手動</span>
-        <button class="btn-small-outline" id="btnRedactUndo">↩ 元に戻す</button>
-        <button class="btn btn-secondary" id="btnRedactClearPage" style="padding:6px 14px;font-size:13px;">このページをクリア</button>
-        <button class="btn btn-danger" id="btnRedactClearAll" style="padding:6px 14px;font-size:13px;">全ページをクリア</button>
+      <!-- How-to guide for first-timers -->
+      <div class="redact-guide">
+        <strong>📖 使い方（3ステップ）</strong>
+        <ol>
+          <li><b>黒塗りする箇所を指定</b> — 下の3つの方法から選べます（組み合わせOK）
+            <span class="redact-guide-methods">
+              <span>🔍 言葉で探す</span>
+              <span>🎯 種類で一括</span>
+              <span>✏️ ドラッグで囲む</span>
+            </span>
+          </li>
+          <li><b>プレビューで確認</b> — 黒く塗られた箇所を画面で確認・修正</li>
+          <li><b>ダウンロード</b> — 文字が完全に消えた安全なPDFを保存</li>
+        </ol>
+        <div class="redact-guide-note">💡 文字をコピーしようとしても取り出せない状態（画像化）で保存されます。隠した文字が裏から復元される心配はありません。</div>
       </div>
 
-      <!-- Search & Redact section -->
-      <div class="split-source" style="margin-bottom:12px;">
-        <div class="section-title">🔍 キーワード検索して黒塗り</div>
-        <p style="font-size:13px;color:#666;margin:8px 0 12px;">特定の名前・住所・金額などを入力すると、その箇所だけをピンポイントで黒塗りします。</p>
+      <!-- OCR opt-in (for scanned PDFs) -->
+      <div class="redact-ocr-box" id="redactOcrBox">
         <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;">
-          <input type="text" id="redactSearchTerm" placeholder="例：山田太郎、〇〇町、電話番号..."
+          <span style="font-size:20px;">🔎</span>
+          <div style="flex:1;min-width:240px;">
+            <b style="font-size:14px;">スキャンした書類（画像のPDF）で文字を検索したいとき</b>
+            <p style="font-size:12.5px;color:#666;margin-top:3px;line-height:1.6;">
+              コピー機で取り込んだPDFなどは、そのままでは文字を検索できません。下のボタンで一度だけ「文字読み取り（OCR）」を実行すると、🔍言葉で探す・🎯種類で一括が使えるようになります。
+            </p>
+          </div>
+        </div>
+        <div style="display:flex;gap:10px;margin-top:10px;flex-wrap:wrap;align-items:center;">
+          <button class="btn btn-secondary" id="btnRedactOcr" style="padding:8px 18px;">📄 このPDFの文字を読み取る（OCR）</button>
+          <span id="redactOcrStatus" style="font-size:13px;color:#555;"></span>
+        </div>
+        <div class="progress-bar" id="redactOcrProgress"><div class="progress-fill" id="redactOcrProgressFill"></div></div>
+        <p style="font-size:11.5px;color:#999;margin-top:6px;">※ 初回はAIエンジンの読み込みに数十秒かかります。ページ数が多いほど時間がかかります。文字が選べるPDFではこの操作は不要です。</p>
+      </div>
+
+      <!-- METHOD 1: keyword / regex search -->
+      <div class="split-source redact-method" style="margin-bottom:12px;">
+        <div class="section-title">🔍 ① 言葉で探して黒塗り</div>
+        <p style="font-size:13px;color:#666;margin:8px 0 12px;">隠したい名前・住所・金額などを入力すると、その文字だけをピンポイントで黒塗りします。</p>
+        <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;">
+          <input type="text" id="redactSearchTerm" placeholder="例：山田太郎"
             style="flex:1;min-width:220px;padding:8px 12px;border:1px solid #ddd;border-radius:6px;font-size:14px;">
           <label style="font-size:13px;display:flex;align-items:center;gap:5px;white-space:nowrap;cursor:pointer;">
             <input type="checkbox" id="redactSearchCase" style="width:14px;height:14px;"> 大小文字を区別
           </label>
+          <label style="font-size:13px;display:flex;align-items:center;gap:5px;white-space:nowrap;cursor:pointer;" title="電話番号や日付などのパターンを自分で指定したい上級者向け">
+            <input type="checkbox" id="redactSearchRegex" style="width:14px;height:14px;"> 正規表現で検索
+          </label>
         </div>
         <div style="display:flex;gap:10px;margin-top:10px;flex-wrap:wrap;align-items:center;">
-          <button class="btn btn-secondary" id="btnRedactSearchPage" style="padding:8px 18px;">このページを黒塗り</button>
-          <button class="btn btn-primary" id="btnRedactSearchAll" style="padding:8px 18px;">全ページを黒塗り</button>
+          <button class="btn btn-secondary" id="btnRedactSearchPage" style="padding:8px 18px;">このページだけ</button>
+          <button class="btn btn-primary" id="btnRedactSearchAll" style="padding:8px 18px;">全ページから探して黒塗り</button>
           <span id="redactSearchStatus" style="font-size:13px;color:#555;"></span>
         </div>
+      </div>
+
+      <!-- METHOD 2: pattern presets -->
+      <div class="split-source redact-method" style="margin-bottom:12px;">
+        <div class="section-title">🎯 ② 種類で一括黒塗り</div>
+        <p style="font-size:13px;color:#666;margin:8px 0 12px;">よくある個人情報を、ワンクリックで全ページから自動で見つけて黒塗りします。</p>
+        <div class="redact-pattern-grid" id="redactPatternGrid">
+          <button class="redact-pattern-btn" data-pat="phone">📞 電話番号</button>
+          <button class="redact-pattern-btn" data-pat="postal">📮 郵便番号</button>
+          <button class="redact-pattern-btn" data-pat="email">✉️ メール</button>
+          <button class="redact-pattern-btn" data-pat="date">📅 日付</button>
+          <button class="redact-pattern-btn" data-pat="money">💴 金額</button>
+          <button class="redact-pattern-btn" data-pat="number">🔢 長い数字（口座等）</button>
+        </div>
+        <span id="redactPatternStatus" style="font-size:13px;color:#555;display:inline-block;margin-top:8px;"></span>
       </div>
 
       <!-- Info bar -->
       <div class="redact-info-bar" id="redactInfoBar">ファイルを読み込み中...</div>
 
-      <!-- Page navigation -->
+      <!-- METHOD 3 toolbar: manual -->
+      <div class="redact-toolbar">
+        <span class="redact-toolbar-label">✏️ ③ 手動：</span>
+        <span style="font-size:12.5px;color:#666;">画面上でドラッグして囲む／右クリックで削除</span>
+        <div class="redact-toolbar-sep"></div>
+        <button class="btn-small-outline" id="btnRedactUndo">↩ 元に戻す (Ctrl+Z)</button>
+        <button class="btn btn-secondary" id="btnRedactClearPage" style="padding:6px 14px;font-size:13px;">このページの黒塗りを消す</button>
+        <button class="btn btn-danger" id="btnRedactClearAll" style="padding:6px 14px;font-size:13px;">全部消す</button>
+      </div>
+
+      <!-- Page navigation + zoom -->
       <div class="redact-page-nav">
         <button class="btn btn-secondary" id="btnRedactPrev" style="padding:8px 18px;" disabled>← 前のページ</button>
         <span id="redactPageIndicator" style="font-size:15px;font-weight:600;min-width:90px;text-align:center;"></span>
         <button class="btn btn-secondary" id="btnRedactNext" style="padding:8px 18px;" disabled>次のページ →</button>
+        <div class="redact-toolbar-sep"></div>
+        <button class="btn-small-outline redact-zoom-btn" id="btnRedactZoomOut" title="縮小">－</button>
+        <span id="redactZoomLabel" style="font-size:13px;min-width:48px;text-align:center;">100%</span>
+        <button class="btn-small-outline redact-zoom-btn" id="btnRedactZoomIn" title="拡大">＋</button>
+        <button class="btn-small-outline" id="btnRedactZoomReset" title="ページ幅に合わせる">幅に合わせる</button>
       </div>
 
       <!-- Canvas area -->
@@ -373,7 +436,7 @@ body { font-family: 'Segoe UI', 'Yu Gothic UI', 'Meiryo', sans-serif; background
           <canvas id="redactOverlayCanvas"></canvas>
         </div>
       </div>
-      <p class="redact-hint">ドラッグして黒塗りを追加 ／ 右クリックで削除 ／ Ctrl+Z で元に戻す</p>
+      <p class="redact-hint">ドラッグして黒塗りを追加 ／ 黒塗りを右クリックで削除 ／ Ctrl+Z で元に戻す</p>
 
       <!-- Status & progress -->
       <div class="status" id="redactStatus" style="margin-top:8px;min-height:18px;"></div>
@@ -381,7 +444,7 @@ body { font-family: 'Segoe UI', 'Yu Gothic UI', 'Meiryo', sans-serif; background
 
       <!-- Warning -->
       <div class="redact-warning">
-        ⚠️ ダウンロードすると全ページが画像化されます。テキスト層が完全に削除されるため、黒塗り箇所以外の文字もコピー・検索はできなくなります。
+        🔒 <b>安全な仕組み</b>：ダウンロード時に全ページを画像化します。元の文字情報（テキスト層）がPDFから完全に消えるため、黒塗りの裏に隠れた文字をコピー・検索・復元することは一切できません。
       </div>
 
       <!-- Download -->
@@ -1312,6 +1375,10 @@ let redactUndoStack = {};
 let redactIsDrawing = false;
 let redactDragStart = null;
 let redactEventsReady = false;
+let redactZoom = 1;            // 1 = fit-to-width baseline
+let redactBaseScale = 1;       // fit-to-width scale (computed per page)
+let redactOcrData = {};        // { pageIdx: [{str,x,y,w,h}] } in scale=1 PDF-point space
+const OCR_RENDER_SCALE = 2;    // render scale used for OCR accuracy
 
 const redactUploadEl = document.getElementById('redactUpload');
 const redactFileInputEl = document.getElementById('redactFileInput');
@@ -1326,20 +1393,59 @@ redactUploadEl.addEventListener('drop', e => {
 });
 redactFileInputEl.addEventListener('change', e => { if (e.target.files[0]) handleRedactFile(e.target.files[0]); });
 
+// Convert any supported file (PDF / image / Word / Excel) into PDF bytes
+async function fileToPdfBytes(file) {
+  if (isPdfFile(file)) {
+    return new Uint8Array(await file.arrayBuffer());
+  }
+  const data = await file.arrayBuffer();
+  const pdf = await PDFDocument.create();
+  if (isOfficeFile(file)) {
+    const pngDataArray = await officeToImages(file.name, data);
+    await embedOfficePages(pdf, pngDataArray);
+  } else if (isImageFile(file)) {
+    await embedImageAsPage(pdf, data, file.type);
+  } else {
+    throw new Error('対応していない形式です');
+  }
+  return await pdf.save();
+}
+
 async function handleRedactFile(file) {
-  if (!isPdfFile(file)) { alert('PDFファイルを選択してください'); return; }
+  if (!isPdfFile(file) && !isImageFile(file) && !isOfficeFile(file)) {
+    alert('PDF・画像・Word・Excel のいずれかを選択してください');
+    return;
+  }
   try {
-    redactFileData = await file.arrayBuffer();
+    if (!isPdfFile(file)) {
+      document.getElementById('redactWorkArea').style.display = 'none';
+      const up = document.getElementById('redactUpload');
+      const orig = up.querySelector('p').textContent;
+      up.querySelector('p').textContent = `${file.name} をPDFに変換中...`;
+      try {
+        const pdfBytes = await fileToPdfBytes(file);
+        redactFileData = pdfBytes.buffer.slice(pdfBytes.byteOffset, pdfBytes.byteOffset + pdfBytes.byteLength);
+      } finally {
+        up.querySelector('p').textContent = orig;
+      }
+    } else {
+      redactFileData = await file.arrayBuffer();
+    }
     const copy = new Uint8Array(redactFileData).slice().buffer;
     redactPdfJsDoc = await pdfjsLib.getDocument({ data: copy }).promise;
     redactPageCount = redactPdfJsDoc.numPages;
     redactCurrentPage = 1;
     redactRects = {};
     redactUndoStack = {};
+    redactOcrData = {};
+    redactZoom = 1;
 
     document.getElementById('redactWorkArea').style.display = 'block';
     document.getElementById('redactFileNameLabel').textContent = file.name;
     document.getElementById('redactFileInfo').textContent = `${redactPageCount}ページ`;
+
+    // Detect whether the PDF has a usable text layer (first page sample)
+    await redactDetectTextLayer();
 
     setupRedactEvents();
     await renderRedactPage(redactCurrentPage);
@@ -1356,10 +1462,11 @@ async function renderRedactPage(pageNum) {
   const overCvs = document.getElementById('redactOverlayCanvas');
   const page = await redactPdfJsDoc.getPage(pageNum);
 
-  // Scale to fit within 950px width
+  // Scale to fit within 950px width, then apply zoom factor
   const vp1 = page.getViewport({ scale: 1 });
   const maxW = Math.min(window.innerWidth - 160, 950);
-  const scale = Math.min(1.8, maxW / vp1.width);
+  redactBaseScale = Math.min(1.8, maxW / vp1.width);
+  const scale = redactBaseScale * redactZoom;
   const vp = page.getViewport({ scale });
 
   pageCvs.width = vp.width;
@@ -1532,70 +1639,51 @@ document.getElementById('btnRedactClearAll').addEventListener('click', () => {
   updateRedactInfo();
 });
 
-// Auto-detect text positions using pdf.js textContent API
-async function autoRedact(pages) {
-  const status = document.getElementById('redactStatus');
-  const minPt = parseFloat(document.getElementById('redactFontThreshold').value) || 0;
-  status.textContent = '文字を検出中...';
+// ===== ZOOM =====
+function setRedactZoom(z) {
+  redactZoom = Math.max(0.4, Math.min(4, z));
+  document.getElementById('redactZoomLabel').textContent = Math.round(redactZoom * 100) + '%';
+  renderRedactPage(redactCurrentPage);
+}
+document.getElementById('btnRedactZoomIn').addEventListener('click', () => setRedactZoom(redactZoom * 1.25));
+document.getElementById('btnRedactZoomOut').addEventListener('click', () => setRedactZoom(redactZoom / 1.25));
+document.getElementById('btnRedactZoomReset').addEventListener('click', () => setRedactZoom(1));
 
-  for (let i = 0; i < pages.length; i++) {
-    const pageNum = pages[i];
-    status.textContent = `ページ ${pageNum}/${redactPageCount} を検出中...`;
-
-    const page = await redactPdfJsDoc.getPage(pageNum);
-    const vp = page.getViewport({ scale: 1 }); // use scale=1: coords in PDF points
-    const textContent = await page.getTextContent();
-
-    const pi = pageNum - 1;
-    pushUndo(pi);
-    if (!redactRects[pi]) redactRects[pi] = [];
-
-    for (const item of textContent.items) {
-      if (!item.str || !item.str.trim()) continue;
-
-      // Font size in PDF points
-      const fontPt = item.height > 0 ? item.height : Math.abs(item.transform[3]);
-      if (fontPt < minPt) continue;
-
-      // Transform item position to canvas space (scale=1, so coords = points, y flipped)
-      const tx = pdfjsLib.Util.transform(vp.transform, item.transform);
-      // tx[4]=canvasX (from left), tx[5]=baseline Y (from top), tx[3]=y-scale (negative)
-      const fontH = Math.abs(tx[3]) > 0 ? Math.abs(tx[3]) : fontPt;
-      const textW = item.width > 0 ? item.width : fontPt; // advance width in pt
-
-      const pad = 2; // padding in pt
-      const rx = Math.max(0, tx[4] - pad);
-      const ry = Math.max(0, tx[5] - fontH - pad); // top of text
-      const rw = textW + pad * 2;
-      const rh = fontH + pad * 2;
-
-      const fx = rx / vp.width;
-      const fy = ry / vp.height;
-      const fw = Math.min(rw / vp.width, 1 - fx);
-      const fh = Math.min(rh / vp.height, 1 - fy);
-
-      if (fw > 0 && fh > 0 && fx < 1 && fy < 1) {
-        redactRects[pi].push({ x: fx, y: fy, w: fw, h: fh });
-      }
-    }
-  }
-
-  await renderRedactPage(redactCurrentPage);
-  updateRedactInfo();
-  status.textContent = pages.length > 1
-    ? `${pages.length}ページの検出が完了しました`
-    : '検出が完了しました';
+// ===== TEXT EXTRACTION (text layer OR OCR) =====
+// Returns { vp(scale=1), items:[{str,x,y,w,h}] } in top-left PDF-point space
+async function getPageTextItems(pageNum) {
+  const page = await redactPdfJsDoc.getPage(pageNum);
+  const vp = page.getViewport({ scale: 1 });
+  const tc = await page.getTextContent();
+  const items = tc.items.filter(it => it.str).map(it => {
+    const tx = pdfjsLib.Util.transform(vp.transform, it.transform);
+    const h = Math.abs(tx[3]) > 0 ? Math.abs(tx[3]) : (it.height || 10);
+    const w = it.width > 0 ? it.width : h;
+    return { str: it.str, x: tx[4], y: tx[5] - h, w, h };
+  });
+  if (items.length > 0) return { vp, items, source: 'text' };
+  if (redactOcrData[pageNum - 1]) return { vp, items: redactOcrData[pageNum - 1], source: 'ocr' };
+  return { vp, items: [], source: 'none' };
 }
 
-document.getElementById('btnRedactAutoPage').addEventListener('click', () => {
-  autoRedact([redactCurrentPage]);
-});
-document.getElementById('btnRedactAutoAll').addEventListener('click', () => {
-  autoRedact(Array.from({ length: redactPageCount }, (_, i) => i + 1));
-});
+// Detect text layer on first page → guide the OCR box
+async function redactDetectTextLayer() {
+  try {
+    const page = await redactPdfJsDoc.getPage(1);
+    const tc = await page.getTextContent();
+    const hasText = tc.items.some(it => it.str && it.str.trim());
+    const ocrBox = document.getElementById('redactOcrBox');
+    if (hasText) {
+      ocrBox.style.display = 'none'; // text-based PDF: OCR not needed
+    } else {
+      ocrBox.style.display = 'block';
+      document.getElementById('redactOcrStatus').textContent =
+        'このPDFは文字情報がありません。検索を使うにはOCRが必要です。';
+    }
+  } catch (e) { /* ignore */ }
+}
 
-// ===== SEARCH & REDACT =====
-// Group text items into lines by similar vertical position
+// Group items into lines by similar vertical position
 function groupIntoLines(items) {
   const lines = [];
   for (const item of items) {
@@ -1603,43 +1691,21 @@ function groupIntoLines(items) {
     for (const line of lines) {
       const ref = line[0];
       const tol = Math.max(ref.h, item.h) * 0.6;
-      if (Math.abs(item.y - ref.y) < tol) {
-        line.push(item);
-        placed = true;
-        break;
-      }
+      if (Math.abs(item.y - ref.y) < tol) { line.push(item); placed = true; break; }
     }
     if (!placed) lines.push([item]);
   }
   return lines;
 }
 
-async function searchAndRedact(pages) {
-  const rawTerm = document.getElementById('redactSearchTerm').value;
-  const caseSensitive = document.getElementById('redactSearchCase').checked;
-  const status = document.getElementById('redactSearchStatus');
-
-  if (!rawTerm.trim()) { status.textContent = '⚠️ 検索語を入力してください'; return; }
-  status.textContent = '検索中...';
-
-  const searchTerm = caseSensitive ? rawTerm : rawTerm.toLowerCase();
-  let totalFound = 0;
-
+// ===== CORE: redact by a matcher that returns [start,end) ranges per line =====
+async function redactByMatcher(pages, getRanges, statusEl) {
+  let total = 0;
+  let usableText = false;
   for (const pageNum of pages) {
-    const page = await redactPdfJsDoc.getPage(pageNum);
-    const vp = page.getViewport({ scale: 1 }); // coords in PDF points
-    const textContent = await page.getTextContent();
-
-    // Map each item to canvas-space bounding box
-    const items = textContent.items
-      .filter(it => it.str)
-      .map(it => {
-        const tx = pdfjsLib.Util.transform(vp.transform, it.transform);
-        const h = Math.abs(tx[3]) > 0 ? Math.abs(tx[3]) : (it.height || 10);
-        const w = it.width > 0 ? it.width : h;
-        return { str: it.str, x: tx[4], y: tx[5] - h, w, h };
-      });
-
+    const { vp, items, source } = await getPageTextItems(pageNum);
+    if (items.length === 0) continue;
+    usableText = true;
     const lines = groupIntoLines(items);
     const pi = pageNum - 1;
     pushUndo(pi);
@@ -1647,64 +1713,208 @@ async function searchAndRedact(pages) {
 
     for (const line of lines) {
       line.sort((a, b) => a.x - b.x);
-      const lineStr = line.map(it => it.str).join('');
-      const searchStr = caseSensitive ? lineStr : lineStr.toLowerCase();
+      // Build concatenated string + per-item char offsets
+      let s = '';
+      const map = [];
+      for (const it of line) { const start = s.length; s += it.str; map.push({ start, end: s.length, it }); }
 
-      let pos = 0;
-      while (pos < searchStr.length) {
-        const matchPos = searchStr.indexOf(searchTerm, pos);
-        if (matchPos === -1) break;
-
-        // Compute union bounding box of all items overlapping the match
-        let charIdx = 0;
+      const ranges = getRanges(s);
+      for (const [a, b] of ranges) {
         let minX = Infinity, maxX = -Infinity, minY = Infinity, maxY = -Infinity;
-
-        for (const it of line) {
-          const start = charIdx;
-          const end = charIdx + it.str.length;
-          if (end > matchPos && start < matchPos + searchTerm.length) {
-            if (it.x < minX) minX = it.x;
-            if (it.x + it.w > maxX) maxX = it.x + it.w;
-            if (it.y < minY) minY = it.y;
-            if (it.y + it.h > maxY) maxY = it.y + it.h;
+        for (const m of map) {
+          if (m.end > a && m.start < b) {
+            if (m.it.x < minX) minX = m.it.x;
+            if (m.it.x + m.it.w > maxX) maxX = m.it.x + m.it.w;
+            if (m.it.y < minY) minY = m.it.y;
+            if (m.it.y + m.it.h > maxY) maxY = m.it.y + m.it.h;
           }
-          charIdx = end;
         }
-
-        if (minX < Infinity) {
-          const pad = 2;
-          redactRects[pi].push({
-            x: Math.max(0, (minX - pad) / vp.width),
-            y: Math.max(0, (minY - pad) / vp.height),
-            w: Math.min((maxX - minX + pad * 2) / vp.width, 1 - Math.max(0, (minX - pad) / vp.width)),
-            h: Math.min((maxY - minY + pad * 2) / vp.height, 1 - Math.max(0, (minY - pad) / vp.height))
-          });
-          totalFound++;
-        }
-        pos = matchPos + 1;
+        if (minX === Infinity) continue;
+        const pad = 2;
+        const fx = Math.max(0, (minX - pad) / vp.width);
+        const fy = Math.max(0, (minY - pad) / vp.height);
+        redactRects[pi].push({
+          x: fx, y: fy,
+          w: Math.min((maxX - minX + pad * 2) / vp.width, 1 - fx),
+          h: Math.min((maxY - minY + pad * 2) / vp.height, 1 - fy)
+        });
+        total++;
       }
     }
   }
 
   await renderRedactPage(redactCurrentPage);
   updateRedactInfo();
-  if (totalFound > 0) {
-    status.textContent = `✅ ${totalFound}箇所を黒塗りしました`;
+  if (!usableText) {
+    statusEl.textContent = '⚠️ 文字情報がありません。先に「文字を読み取る（OCR）」を実行してください。';
+  } else if (total > 0) {
+    statusEl.textContent = `✅ ${total}箇所を黒塗りしました`;
   } else {
-    status.textContent = '該当箇所が見つかりませんでした（テキスト層のないPDFは検出不可）';
+    statusEl.textContent = '該当する箇所は見つかりませんでした。';
   }
+  return total;
 }
 
-document.getElementById('btnRedactSearchPage').addEventListener('click', () => {
-  searchAndRedact([redactCurrentPage]);
-});
-document.getElementById('btnRedactSearchAll').addEventListener('click', () => {
-  searchAndRedact(Array.from({ length: redactPageCount }, (_, i) => i + 1));
+// ===== METHOD 1: keyword / regex search =====
+function allPages() { return Array.from({ length: redactPageCount }, (_, i) => i + 1); }
+
+async function doKeywordSearch(pages) {
+  const raw = document.getElementById('redactSearchTerm').value;
+  const status = document.getElementById('redactSearchStatus');
+  if (!raw.trim()) { status.textContent = '⚠️ 探す言葉を入力してください'; return; }
+  const caseSensitive = document.getElementById('redactSearchCase').checked;
+  const useRegex = document.getElementById('redactSearchRegex').checked;
+  status.textContent = '検索中...';
+
+  let getRanges;
+  if (useRegex) {
+    let re;
+    try { re = new RegExp(raw, caseSensitive ? 'g' : 'gi'); }
+    catch (e) { status.textContent = '⚠️ 正規表現が不正です: ' + e.message; return; }
+    getRanges = (s) => {
+      const out = []; re.lastIndex = 0; let m;
+      while ((m = re.exec(s)) !== null) {
+        if (m[0].length === 0) { re.lastIndex++; continue; }
+        out.push([m.index, m.index + m[0].length]);
+      }
+      return out;
+    };
+  } else {
+    const needle = caseSensitive ? raw : raw.toLowerCase();
+    getRanges = (s) => {
+      const out = []; const hay = caseSensitive ? s : s.toLowerCase();
+      let pos = 0;
+      while (true) { const i = hay.indexOf(needle, pos); if (i < 0) break; out.push([i, i + needle.length]); pos = i + needle.length; }
+      return out;
+    };
+  }
+  await redactByMatcher(pages, getRanges, status);
+}
+
+document.getElementById('btnRedactSearchPage').addEventListener('click', () => doKeywordSearch([redactCurrentPage]));
+document.getElementById('btnRedactSearchAll').addEventListener('click', () => doKeywordSearch(allPages()));
+document.getElementById('redactSearchTerm').addEventListener('keydown', e => {
+  if (e.key === 'Enter') doKeywordSearch(allPages());
 });
 
-// Enter key in search box triggers all-page search
-document.getElementById('redactSearchTerm').addEventListener('keydown', e => {
-  if (e.key === 'Enter') searchAndRedact(Array.from({ length: redactPageCount }, (_, i) => i + 1));
+// ===== METHOD 2: pattern presets =====
+const REDACT_PATTERNS = {
+  phone:  '0\\d{1,4}[-－(（]?\\d{1,4}[-－)）]?\\d{3,4}',
+  postal: '〒?\\s?\\d{3}[-－]?\\d{4}',
+  email:  '[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\\.[A-Za-z]{2,}',
+  date:   '(令和|平成|昭和|R|H|S)?\\s?\\d{1,4}\\s?年\\s?\\d{1,2}\\s?月\\s?\\d{1,2}\\s?日|\\d{4}[\\/.\\-年]\\d{1,2}[\\/.\\-月]\\d{1,2}日?',
+  money:  '[¥￥]\\s?[\\d,，]+|[\\d,，]+\\s?円',
+  number: '[\\d]{6,}'
+};
+const PATTERN_LABELS = { phone:'電話番号', postal:'郵便番号', email:'メール', date:'日付', money:'金額', number:'長い数字' };
+
+async function doPatternRedact(patKey) {
+  const status = document.getElementById('redactPatternStatus');
+  const src = REDACT_PATTERNS[patKey];
+  if (!src) return;
+  status.textContent = `${PATTERN_LABELS[patKey]}を検索中...`;
+  const re = new RegExp(src, 'g');
+  const getRanges = (s) => {
+    const out = []; re.lastIndex = 0; let m;
+    while ((m = re.exec(s)) !== null) {
+      if (m[0].length === 0) { re.lastIndex++; continue; }
+      out.push([m.index, m.index + m[0].length]);
+    }
+    return out;
+  };
+  const total = await redactByMatcher(allPages(), getRanges, status);
+  if (total > 0) status.textContent = `✅ ${PATTERN_LABELS[patKey]}を ${total}箇所 黒塗りしました`;
+}
+
+document.querySelectorAll('.redact-pattern-btn').forEach(btn => {
+  btn.addEventListener('click', () => doPatternRedact(btn.dataset.pat));
+});
+
+// ===== OCR (opt-in, lazy-loaded Tesseract.js) =====
+function loadScriptOnce(src) {
+  return new Promise((resolve, reject) => {
+    const s = document.createElement('script');
+    s.src = src;
+    s.onload = resolve;
+    s.onerror = () => reject(new Error('スクリプトの読み込みに失敗しました（ネット接続を確認してください）'));
+    document.head.appendChild(s);
+  });
+}
+
+// Traverse Tesseract result for word boxes (handles v5 blocks or flat words)
+function extractOcrWords(data) {
+  const words = [];
+  if (data.words && data.words.length) {
+    for (const w of data.words) if (w.text && w.text.trim()) words.push(w);
+  } else if (data.blocks) {
+    for (const b of (data.blocks || []))
+      for (const p of (b.paragraphs || []))
+        for (const l of (p.lines || []))
+          for (const w of (l.words || [])) if (w.text && w.text.trim()) words.push(w);
+  }
+  return words;
+}
+
+document.getElementById('btnRedactOcr').addEventListener('click', async () => {
+  const btn = document.getElementById('btnRedactOcr');
+  const status = document.getElementById('redactOcrStatus');
+  const bar = document.getElementById('redactOcrProgress');
+  const fill = document.getElementById('redactOcrProgressFill');
+  btn.disabled = true;
+  bar.classList.add('show');
+  fill.style.width = '3%';
+
+  try {
+    if (!window.Tesseract) {
+      status.textContent = 'AIエンジンを読み込み中...（初回のみ）';
+      await loadScriptOnce('https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js');
+    }
+    status.textContent = '日本語データを準備中...';
+    const worker = await Tesseract.createWorker('jpn', 1, {
+      logger: m => {
+        if (m.status === 'recognizing text' && typeof m.progress === 'number') {
+          fill.style.width = `${10 + m.progress * 80}%`;
+        }
+      }
+    });
+
+    redactOcrData = {};
+    const copy = new Uint8Array(redactFileData).slice().buffer;
+    const renderDoc = await pdfjsLib.getDocument({ data: copy }).promise;
+
+    for (let pageNum = 1; pageNum <= redactPageCount; pageNum++) {
+      status.textContent = `ページ ${pageNum}/${redactPageCount} を読み取り中...`;
+      fill.style.width = `${10 + ((pageNum - 1) / redactPageCount) * 80}%`;
+
+      const page = await renderDoc.getPage(pageNum);
+      const vp = page.getViewport({ scale: OCR_RENDER_SCALE });
+      const cvs = document.createElement('canvas');
+      cvs.width = vp.width; cvs.height = vp.height;
+      await page.render({ canvasContext: cvs.getContext('2d'), viewport: vp }).promise;
+
+      const { data } = await worker.recognize(cvs, {}, { blocks: true });
+      const words = extractOcrWords(data);
+      // Store in scale=1 PDF-point space (top-left origin)
+      redactOcrData[pageNum - 1] = words.map(w => ({
+        str: w.text,
+        x: w.bbox.x0 / OCR_RENDER_SCALE,
+        y: w.bbox.y0 / OCR_RENDER_SCALE,
+        w: (w.bbox.x1 - w.bbox.x0) / OCR_RENDER_SCALE,
+        h: (w.bbox.y1 - w.bbox.y0) / OCR_RENDER_SCALE
+      }));
+    }
+
+    await worker.terminate();
+    fill.style.width = '100%';
+    const totalWords = Object.values(redactOcrData).reduce((s, a) => s + a.length, 0);
+    status.textContent = `✅ 読み取り完了（${totalWords}語）。🔍言葉で探す・🎯種類で一括が使えます。`;
+  } catch (err) {
+    status.textContent = 'エラー: ' + err.message;
+    console.error(err);
+  } finally {
+    btn.disabled = false;
+    setTimeout(() => { bar.classList.remove('show'); fill.style.width = '0'; }, 2500);
+  }
 });
 
 // Download: rasterize all pages with black rects baked in (removes ALL text layers)
