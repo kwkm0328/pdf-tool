@@ -146,6 +146,22 @@ body { font-family: 'Segoe UI', 'Yu Gothic UI', 'Meiryo', sans-serif; background
 .redact-pattern-btn:hover:not(:disabled) { background: #e8f0fe; }
 .redact-pattern-btn:disabled { border-color: #ccc; color: #bbb; cursor: not-allowed; }
 .redact-zoom-btn { width: 36px; padding: 6px 0; text-align: center; font-size: 16px; }
+.redact-main { display: flex; gap: 12px; align-items: flex-start; }
+.redact-thumbs { width: 132px; flex-shrink: 0; max-height: 640px; overflow-y: auto; background: #f0f2f5; border-radius: 8px; padding: 8px; display: flex; flex-direction: column; gap: 8px; }
+.redact-thumb { position: relative; border: 2px solid #d9d9d9; border-radius: 5px; overflow: hidden; cursor: pointer; background: #fff; transition: all 0.15s; }
+.redact-thumb:hover { border-color: #1a73e8; }
+.redact-thumb.current { border-color: #1a73e8; box-shadow: 0 0 0 2px rgba(26,115,232,0.35); }
+.redact-thumb canvas { width: 100%; display: block; }
+.redact-thumb .thumb-num { position: absolute; top: 2px; left: 2px; background: rgba(0,0,0,0.6); color: #fff; font-size: 10px; padding: 0 5px; border-radius: 3px; }
+.redact-thumb .thumb-badge { position: absolute; top: 2px; right: 2px; background: #111; color: #fff; font-size: 10px; font-weight: 700; padding: 0 5px; border-radius: 8px; display: none; }
+.redact-thumb.has-redaction { border-color: #111; }
+.redact-thumb.has-redaction .thumb-badge { display: block; }
+.redact-right { flex: 1; min-width: 0; }
+.redact-out-opts { display: flex; flex-wrap: wrap; gap: 18px; align-items: center; background: #fff; border-radius: 8px; padding: 12px 16px; box-shadow: 0 1px 3px rgba(0,0,0,0.08); margin-top: 14px; }
+.redact-out-opts .opt-group { display: flex; align-items: center; gap: 8px; }
+.redact-out-opts label.opt-label { font-size: 13px; font-weight: 700; white-space: nowrap; }
+.redact-out-opts select { padding: 6px 10px; border: 1px solid #ddd; border-radius: 6px; font-size: 13px; }
+.redact-pending-bar { display: flex; flex-wrap: wrap; gap: 12px; align-items: center; background: #fff7e6; border: 1px solid #ffd591; border-radius: 8px; padding: 10px 16px; margin-bottom: 10px; font-size: 13px; }
 </style>
 </head>
 <body>
@@ -371,7 +387,7 @@ body { font-family: 'Segoe UI', 'Yu Gothic UI', 'Meiryo', sans-serif; background
       <!-- METHOD 1: keyword / regex search -->
       <div class="split-source redact-method" style="margin-bottom:12px;">
         <div class="section-title">🔍 ① 言葉で探して黒塗り</div>
-        <p style="font-size:13px;color:#666;margin:8px 0 12px;">隠したい名前・住所・金額などを入力すると、その文字だけをピンポイントで黒塗りします。</p>
+        <p style="font-size:13px;color:#666;margin:8px 0 12px;">隠したい名前・住所などを入力すると、その箇所を<b>グレーの候補</b>として表示します（クリックで黒塗りに確定）。<br>「川上健太」で「川上 健太」「川　上　健　太」のように<b>間にスペースがあっても</b>見つけます。</p>
         <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;">
           <input type="text" id="redactSearchTerm" placeholder="例：山田太郎"
             style="flex:1;min-width:220px;padding:8px 12px;border:1px solid #ddd;border-radius:6px;font-size:14px;">
@@ -392,20 +408,27 @@ body { font-family: 'Segoe UI', 'Yu Gothic UI', 'Meiryo', sans-serif; background
       <!-- METHOD 2: pattern presets -->
       <div class="split-source redact-method" style="margin-bottom:12px;">
         <div class="section-title">🎯 ② 種類で一括黒塗り</div>
-        <p style="font-size:13px;color:#666;margin:8px 0 12px;">よくある個人情報を、ワンクリックで全ページから自動で見つけて黒塗りします。</p>
+        <p style="font-size:13px;color:#666;margin:8px 0 12px;">よくある個人情報を、ワンクリックで全ページから自動で探します。見つかった箇所は<b>グレーの候補</b>として表示され、クリックで黒塗りに確定します。</p>
         <div class="redact-pattern-grid" id="redactPatternGrid">
           <button class="redact-pattern-btn" data-pat="phone">📞 電話番号</button>
           <button class="redact-pattern-btn" data-pat="postal">📮 郵便番号</button>
+          <button class="redact-pattern-btn" data-pat="address">🏠 住所</button>
           <button class="redact-pattern-btn" data-pat="email">✉️ メール</button>
           <button class="redact-pattern-btn" data-pat="date">📅 日付</button>
           <button class="redact-pattern-btn" data-pat="money">💴 金額</button>
-          <button class="redact-pattern-btn" data-pat="number">🔢 長い数字（口座等）</button>
         </div>
         <span id="redactPatternStatus" style="font-size:13px;color:#555;display:inline-block;margin-top:8px;"></span>
       </div>
 
       <!-- Info bar -->
       <div class="redact-info-bar" id="redactInfoBar">ファイルを読み込み中...</div>
+
+      <!-- Pending candidates bar (shown only when candidates exist) -->
+      <div class="redact-pending-bar" id="redactPendingBar" style="display:none;">
+        <span>⬜ グレーの候補 <b id="redactPendingCount">0</b> 件 — クリックで1つずつ黒に確定できます</span>
+        <button class="btn btn-primary" id="btnRedactConfirmAll" style="padding:6px 14px;font-size:13px;">すべて黒に確定</button>
+        <button class="btn-small-outline" id="btnRedactDiscardPending">候補を消す</button>
+      </div>
 
       <!-- METHOD 3 toolbar: manual -->
       <div class="redact-toolbar">
@@ -417,7 +440,7 @@ body { font-family: 'Segoe UI', 'Yu Gothic UI', 'Meiryo', sans-serif; background
         <button class="btn btn-danger" id="btnRedactClearAll" style="padding:6px 14px;font-size:13px;">全部消す</button>
       </div>
 
-      <!-- Page navigation + zoom -->
+      <!-- Page navigation + zoom + rotate -->
       <div class="redact-page-nav">
         <button class="btn btn-secondary" id="btnRedactPrev" style="padding:8px 18px;" disabled>← 前のページ</button>
         <span id="redactPageIndicator" style="font-size:15px;font-weight:600;min-width:90px;text-align:center;"></span>
@@ -427,16 +450,27 @@ body { font-family: 'Segoe UI', 'Yu Gothic UI', 'Meiryo', sans-serif; background
         <span id="redactZoomLabel" style="font-size:13px;min-width:48px;text-align:center;">100%</span>
         <button class="btn-small-outline redact-zoom-btn" id="btnRedactZoomIn" title="拡大">＋</button>
         <button class="btn-small-outline" id="btnRedactZoomReset" title="ページ幅に合わせる">幅に合わせる</button>
+        <div class="redact-toolbar-sep"></div>
+        <button class="btn-small-outline" id="btnRedactRotLeft" title="このページを左に90°回転">↶ 左回転</button>
+        <button class="btn-small-outline" id="btnRedactRotRight" title="このページを右に90°回転">↷ 右回転</button>
+        <label style="font-size:12px;display:flex;align-items:center;gap:4px;cursor:pointer;white-space:nowrap;" title="チェックすると全ページをまとめて回転します">
+          <input type="checkbox" id="redactRotAll" style="width:13px;height:13px;"> 全ページ
+        </label>
       </div>
 
-      <!-- Canvas area -->
-      <div class="redact-canvas-outer" id="redactCanvasOuter">
-        <div class="redact-canvas-container" id="redactCanvasContainer">
-          <canvas id="redactPageCanvas"></canvas>
-          <canvas id="redactOverlayCanvas"></canvas>
+      <!-- Thumbnails sidebar + main canvas -->
+      <div class="redact-main">
+        <div class="redact-thumbs" id="redactThumbs" title="ページ一覧（クリックで移動／黒は黒塗りあり）"></div>
+        <div class="redact-right">
+          <div class="redact-canvas-outer" id="redactCanvasOuter">
+            <div class="redact-canvas-container" id="redactCanvasContainer">
+              <canvas id="redactPageCanvas"></canvas>
+              <canvas id="redactOverlayCanvas"></canvas>
+            </div>
+          </div>
+          <p class="redact-hint">ドラッグして黒塗りを追加 ／ 黒塗りを右クリックで削除 ／ Ctrl+Z で元に戻す</p>
         </div>
       </div>
-      <p class="redact-hint">ドラッグして黒塗りを追加 ／ 黒塗りを右クリックで削除 ／ Ctrl+Z で元に戻す</p>
 
       <!-- Status & progress -->
       <div class="status" id="redactStatus" style="margin-top:8px;min-height:18px;"></div>
@@ -447,14 +481,34 @@ body { font-family: 'Segoe UI', 'Yu Gothic UI', 'Meiryo', sans-serif; background
         🔒 <b>安全な仕組み</b>：ダウンロード時に全ページを画像化します。元の文字情報（テキスト層）がPDFから完全に消えるため、黒塗りの裏に隠れた文字をコピー・検索・復元することは一切できません。
       </div>
 
+      <!-- Output options -->
+      <div class="redact-out-opts">
+        <div class="opt-group">
+          <label class="opt-label" for="redactOutFormat">出力形式</label>
+          <select id="redactOutFormat">
+            <option value="pdf">PDF（1ファイル）</option>
+            <option value="png">PNG画像（1ページずつ）</option>
+            <option value="jpg">JPEG画像（1ページずつ・軽量）</option>
+          </select>
+        </div>
+        <div class="opt-group">
+          <label class="opt-label" for="redactOutQuality">画質</label>
+          <select id="redactOutQuality">
+            <option value="200">200dpi（軽量・小サイズ）</option>
+            <option value="300" selected>300dpi（標準）</option>
+            <option value="400">400dpi（高品質・大サイズ）</option>
+          </select>
+        </div>
+      </div>
+
       <!-- Download -->
       <div style="margin-top:14px;display:flex;align-items:center;gap:8px;flex-wrap:wrap;">
         <label style="font-size:14px;font-weight:500;white-space:nowrap;">ファイル名：</label>
         <input type="text" id="redactOutputName" value="黒塗り済み" placeholder="ファイル名" style="flex:1;min-width:180px;padding:8px 12px;border:1px solid #ddd;border-radius:6px;font-size:14px;">
-        <span style="font-size:14px;color:#888;">.pdf</span>
+        <span id="redactOutExt" style="font-size:14px;color:#888;">.pdf</span>
       </div>
       <div class="actions">
-        <button class="btn btn-primary" id="btnRedactDownload">🔒 黒塗り済みPDFをダウンロード</button>
+        <button class="btn btn-primary" id="btnRedactDownload">🔒 黒塗り済みファイルをダウンロード</button>
         <button class="btn btn-danger" id="btnClearRedact">クリア</button>
       </div>
 
@@ -1378,7 +1432,25 @@ let redactEventsReady = false;
 let redactZoom = 1;            // 1 = fit-to-width baseline
 let redactBaseScale = 1;       // fit-to-width scale (computed per page)
 let redactOcrData = {};        // { pageIdx: [{str,x,y,w,h}] } in scale=1 PDF-point space
+let redactRotation = {};       // { pageIdx: 0|90|180|270 } extra rotation applied by user
+let redactPending = {};        // { pageIdx: [{x,y,w,h}] } gray candidates awaiting confirmation
+let redactRenderTask = null;   // in-flight pdf.js render task for the main canvas
 const OCR_RENDER_SCALE = 2;    // render scale used for OCR accuracy
+
+// Map an unrotated normalized point/rect into the displayed (rotated) space
+function mapPointFrac(fx, fy, rot) {
+  switch (((rot % 360) + 360) % 360) {
+    case 90:  return [1 - fy, fx];
+    case 180: return [1 - fx, 1 - fy];
+    case 270: return [fy, 1 - fx];
+    default:  return [fx, fy];
+  }
+}
+function mapRectFrac(r, rot) {
+  const p1 = mapPointFrac(r.x, r.y, rot);
+  const p2 = mapPointFrac(r.x + r.w, r.y + r.h, rot);
+  return { x: Math.min(p1[0], p2[0]), y: Math.min(p1[1], p2[1]), w: Math.abs(p2[0] - p1[0]), h: Math.abs(p2[1] - p1[1]) };
+}
 
 const redactUploadEl = document.getElementById('redactUpload');
 const redactFileInputEl = document.getElementById('redactFileInput');
@@ -1438,6 +1510,8 @@ async function handleRedactFile(file) {
     redactRects = {};
     redactUndoStack = {};
     redactOcrData = {};
+    redactRotation = {};
+    redactPending = {};
     redactZoom = 1;
 
     document.getElementById('redactWorkArea').style.display = 'block';
@@ -1451,6 +1525,7 @@ async function handleRedactFile(file) {
     await renderRedactPage(redactCurrentPage);
     updateRedactNav();
     updateRedactInfo();
+    renderRedactThumbs();
     redactFileInputEl.value = '';
   } catch (err) {
     alert('読み込みエラー: ' + err.message);
@@ -1462,29 +1537,56 @@ async function renderRedactPage(pageNum) {
   const overCvs = document.getElementById('redactOverlayCanvas');
   const page = await redactPdfJsDoc.getPage(pageNum);
 
-  // Scale to fit within 950px width, then apply zoom factor
-  const vp1 = page.getViewport({ scale: 1 });
-  const maxW = Math.min(window.innerWidth - 160, 950);
-  redactBaseScale = Math.min(1.8, maxW / vp1.width);
+  // Scale to fit within 950px width, then apply zoom factor + rotation
+  const rot = redactRotation[pageNum - 1] || 0;
+  const totalRot = (((page.rotate || 0) + rot) % 360 + 360) % 360;
+  const vpFit = page.getViewport({ scale: 1, rotation: totalRot });
+  const maxW = Math.min(window.innerWidth - 300, 900);
+  redactBaseScale = Math.min(1.8, maxW / vpFit.width);
   const scale = redactBaseScale * redactZoom;
-  const vp = page.getViewport({ scale });
+  const vp = page.getViewport({ scale, rotation: totalRot });
 
   pageCvs.width = vp.width;
   pageCvs.height = vp.height;
   overCvs.width = vp.width;
   overCvs.height = vp.height;
 
-  await page.render({ canvasContext: pageCvs.getContext('2d'), viewport: vp }).promise;
+  // Cancel any in-flight render to avoid "same canvas" errors on rapid clicks
+  if (redactRenderTask) { try { redactRenderTask.cancel(); } catch (e) {} redactRenderTask = null; }
+  const task = page.render({ canvasContext: pageCvs.getContext('2d'), viewport: vp });
+  redactRenderTask = task;
+  try {
+    await task.promise;
+  } catch (e) {
+    if (e && e.name === 'RenderingCancelledException') return; // a newer render took over
+    throw e;
+  }
+  redactRenderTask = null;
   drawRedactOverlay(pageNum);
 }
 
 function drawRedactOverlay(pageNum) {
   const cvs = document.getElementById('redactOverlayCanvas');
   const ctx = cvs.getContext('2d');
+  const rot = redactRotation[pageNum - 1] || 0;
   ctx.clearRect(0, 0, cvs.width, cvs.height);
+  // Confirmed redactions: solid black
   ctx.fillStyle = '#000000';
   for (const r of (redactRects[pageNum - 1] || [])) {
-    ctx.fillRect(r.x * cvs.width, r.y * cvs.height, r.w * cvs.width, r.h * cvs.height);
+    const m = mapRectFrac(r, rot);
+    ctx.fillRect(m.x * cvs.width, m.y * cvs.height, m.w * cvs.width, m.h * cvs.height);
+  }
+  // Pending candidates: semi-transparent gray with dashed border (click to confirm)
+  for (const r of (redactPending[pageNum - 1] || [])) {
+    const m = mapRectFrac(r, rot);
+    const x = m.x * cvs.width, y = m.y * cvs.height, w = m.w * cvs.width, h = m.h * cvs.height;
+    ctx.fillStyle = 'rgba(110,110,110,0.55)';
+    ctx.fillRect(x, y, w, h);
+    ctx.strokeStyle = '#1a73e8';
+    ctx.lineWidth = 1.5;
+    ctx.setLineDash([4, 3]);
+    ctx.strokeRect(x + 0.5, y + 0.5, w - 1, h - 1);
+    ctx.setLineDash([]);
   }
 }
 
@@ -1537,16 +1639,22 @@ function setupRedactEvents() {
     const ry = Math.min(redactDragStart.cy, cy);
     const rw = Math.abs(cx - redactDragStart.cx);
     const rh = Math.abs(cy - redactDragStart.cy);
-    if (rw < 4 || rh < 4) { drawRedactOverlay(redactCurrentPage); return; }
+    // Tiny movement = a click: try to confirm a pending (gray) candidate under cursor
+    if (rw < 5 && rh < 5) {
+      if (confirmPendingAt(cx / overCvs.width, cy / overCvs.height)) return;
+      drawRedactOverlay(redactCurrentPage);
+      return;
+    }
     const pi = redactCurrentPage - 1;
     pushUndo(pi);
     if (!redactRects[pi]) redactRects[pi] = [];
-    redactRects[pi].push({
-      x: rx / overCvs.width, y: ry / overCvs.height,
-      w: rw / overCvs.width, h: rh / overCvs.height
-    });
+    // Drawn in the displayed (rotated) space → store in unrotated space
+    const rot = redactRotation[pi] || 0;
+    const drawn = { x: rx / overCvs.width, y: ry / overCvs.height, w: rw / overCvs.width, h: rh / overCvs.height };
+    redactRects[pi].push(mapRectFrac(drawn, (360 - rot) % 360));
     drawRedactOverlay(redactCurrentPage);
     updateRedactInfo();
+    updateThumbStatus(redactCurrentPage);
   });
 
   overCvs.addEventListener('mouseleave', () => {
@@ -1559,14 +1667,28 @@ function setupRedactEvents() {
     const { cx, cy } = getCanvasXY(e, overCvs);
     const fx = cx / overCvs.width, fy = cy / overCvs.height;
     const pi = redactCurrentPage - 1;
+    const rot = redactRotation[pi] || 0;
+    // First, a pending (gray) candidate under cursor → discard it
+    const pend = redactPending[pi] || [];
+    for (let i = pend.length - 1; i >= 0; i--) {
+      const m = mapRectFrac(pend[i], rot);
+      if (fx >= m.x && fx <= m.x + m.w && fy >= m.y && fy <= m.y + m.h) {
+        pend.splice(i, 1);
+        drawRedactOverlay(redactCurrentPage);
+        updatePendingBar();
+        return;
+      }
+    }
+    // Otherwise, a confirmed (black) rect → remove it
     const rects = redactRects[pi] || [];
     for (let i = rects.length - 1; i >= 0; i--) {
-      const r = rects[i];
-      if (fx >= r.x && fx <= r.x + r.w && fy >= r.y && fy <= r.y + r.h) {
+      const m = mapRectFrac(rects[i], rot); // test against displayed position
+      if (fx >= m.x && fx <= m.x + m.w && fy >= m.y && fy <= m.y + m.h) {
         pushUndo(pi);
         rects.splice(i, 1);
         drawRedactOverlay(redactCurrentPage);
         updateRedactInfo();
+        updateThumbStatus(redactCurrentPage);
         return;
       }
     }
@@ -1582,7 +1704,131 @@ function setupRedactEvents() {
     redactRects[pi] = JSON.parse(redactUndoStack[pi].pop());
     drawRedactOverlay(redactCurrentPage);
     updateRedactInfo();
+    updateThumbStatus(redactCurrentPage);
   });
+}
+
+// ===== PENDING CANDIDATES (gray → click to confirm black) =====
+function confirmPendingAt(fx, fy) {
+  const pi = redactCurrentPage - 1;
+  const rot = redactRotation[pi] || 0;
+  const pend = redactPending[pi] || [];
+  for (let i = pend.length - 1; i >= 0; i--) {
+    const m = mapRectFrac(pend[i], rot);
+    if (fx >= m.x && fx <= m.x + m.w && fy >= m.y && fy <= m.y + m.h) {
+      pushUndo(pi);
+      if (!redactRects[pi]) redactRects[pi] = [];
+      redactRects[pi].push(pend[i]); // store in unrotated space (already is)
+      pend.splice(i, 1);
+      drawRedactOverlay(redactCurrentPage);
+      updateRedactInfo();
+      updatePendingBar();
+      updateThumbStatus(redactCurrentPage);
+      renderOneThumb(redactCurrentPage);
+      return true;
+    }
+  }
+  return false;
+}
+
+function pendingCount() {
+  return Object.values(redactPending).reduce((s, a) => s + a.length, 0);
+}
+
+function updatePendingBar() {
+  const n = pendingCount();
+  const bar = document.getElementById('redactPendingBar');
+  bar.style.display = n > 0 ? 'flex' : 'none';
+  document.getElementById('redactPendingCount').textContent = n;
+}
+
+// Confirm all pending candidates → black (across all pages)
+document.getElementById('btnRedactConfirmAll').addEventListener('click', () => {
+  for (const k of Object.keys(redactPending)) {
+    const pi = +k;
+    const list = redactPending[pi];
+    if (!list || !list.length) continue;
+    pushUndo(pi);
+    if (!redactRects[pi]) redactRects[pi] = [];
+    redactRects[pi].push(...list);
+    redactPending[pi] = [];
+  }
+  redactPending = {};
+  drawRedactOverlay(redactCurrentPage);
+  updateRedactInfo();
+  updatePendingBar();
+  (async () => { for (let i = 1; i <= redactPageCount; i++) await renderOneThumb(i); })();
+  document.getElementById('redactStatus').textContent = '候補をすべて黒塗りに確定しました';
+});
+
+// Discard all pending candidates
+document.getElementById('btnRedactDiscardPending').addEventListener('click', () => {
+  redactPending = {};
+  drawRedactOverlay(redactCurrentPage);
+  updatePendingBar();
+});
+
+// ===== THUMBNAILS =====
+async function renderOneThumb(pageNum) {
+  const wrap = document.querySelector(`.redact-thumb[data-page="${pageNum}"]`);
+  if (!wrap) return;
+  const page = await redactPdfJsDoc.getPage(pageNum);
+  const rot = redactRotation[pageNum - 1] || 0;
+  const totalRot = (((page.rotate || 0) + rot) % 360 + 360) % 360;
+  const vp1 = page.getViewport({ scale: 1, rotation: totalRot });
+  const scale = 112 / vp1.width;
+  const vp = page.getViewport({ scale, rotation: totalRot });
+  const cvs = wrap.querySelector('canvas');
+  cvs.width = vp.width; cvs.height = vp.height;
+  await page.render({ canvasContext: cvs.getContext('2d'), viewport: vp }).promise;
+  // draw redaction rects onto thumbnail
+  const ctx = cvs.getContext('2d');
+  ctx.fillStyle = '#000';
+  for (const r of (redactRects[pageNum - 1] || [])) {
+    const m = mapRectFrac(r, rot);
+    ctx.fillRect(m.x * cvs.width, m.y * cvs.height, m.w * cvs.width, m.h * cvs.height);
+  }
+  updateThumbStatus(pageNum);
+}
+
+function renderRedactThumbs() {
+  const box = document.getElementById('redactThumbs');
+  box.innerHTML = '';
+  for (let i = 1; i <= redactPageCount; i++) {
+    const div = document.createElement('div');
+    div.className = 'redact-thumb';
+    div.dataset.page = i;
+    div.innerHTML = `<canvas></canvas><span class="thumb-num">${i}</span><span class="thumb-badge"></span>`;
+    div.addEventListener('click', async () => {
+      redactCurrentPage = i;
+      await renderRedactPage(i);
+      updateRedactNav();
+      updateRedactInfo();
+      setCurrentThumb(i);
+    });
+    box.appendChild(div);
+  }
+  setCurrentThumb(redactCurrentPage);
+  // render thumbnail images sequentially (non-blocking)
+  (async () => { for (let i = 1; i <= redactPageCount; i++) await renderOneThumb(i); })();
+}
+
+function updateThumbStatus(pageNum) {
+  const wrap = document.querySelector(`.redact-thumb[data-page="${pageNum}"]`);
+  if (!wrap) return;
+  const count = (redactRects[pageNum - 1] || []).length;
+  wrap.classList.toggle('has-redaction', count > 0);
+  wrap.querySelector('.thumb-badge').textContent = count > 0 ? count : '';
+}
+
+function updateAllThumbStatus() {
+  for (let i = 1; i <= redactPageCount; i++) updateThumbStatus(i);
+}
+
+function setCurrentThumb(pageNum) {
+  document.querySelectorAll('.redact-thumb').forEach(t => t.classList.remove('current'));
+  const wrap = document.querySelector(`.redact-thumb[data-page="${pageNum}"]`);
+  if (wrap) { wrap.classList.add('current'); wrap.scrollIntoView({ block: 'nearest' }); }
 }
 
 function updateRedactNav() {
@@ -1595,8 +1841,10 @@ function updateRedactInfo() {
   const total = Object.values(redactRects).reduce((s, a) => s + a.length, 0);
   const pages = Object.values(redactRects).filter(a => a.length > 0).length;
   const cur = (redactRects[redactCurrentPage - 1] || []).length;
-  document.getElementById('redactInfoBar').textContent =
-    `このページ: ${cur}個の黒塗り ／ 合計: ${total}個（${pages}ページ）`;
+  const pend = pendingCount();
+  let txt = `このページ: ${cur}個の黒塗り ／ 合計: ${total}個（${pages}ページ）`;
+  if (pend > 0) txt += ` ／ グレー候補: ${pend}個（未確定）`;
+  document.getElementById('redactInfoBar').textContent = txt;
 }
 
 document.getElementById('btnRedactPrev').addEventListener('click', async () => {
@@ -1605,6 +1853,7 @@ document.getElementById('btnRedactPrev').addEventListener('click', async () => {
   await renderRedactPage(redactCurrentPage);
   updateRedactNav();
   updateRedactInfo();
+  setCurrentThumb(redactCurrentPage);
 });
 
 document.getElementById('btnRedactNext').addEventListener('click', async () => {
@@ -1613,6 +1862,7 @@ document.getElementById('btnRedactNext').addEventListener('click', async () => {
   await renderRedactPage(redactCurrentPage);
   updateRedactNav();
   updateRedactInfo();
+  setCurrentThumb(redactCurrentPage);
 });
 
 document.getElementById('btnRedactUndo').addEventListener('click', () => {
@@ -1621,6 +1871,7 @@ document.getElementById('btnRedactUndo').addEventListener('click', () => {
   redactRects[pi] = JSON.parse(redactUndoStack[pi].pop());
   drawRedactOverlay(redactCurrentPage);
   updateRedactInfo();
+  renderOneThumb(redactCurrentPage);
 });
 
 document.getElementById('btnRedactClearPage').addEventListener('click', () => {
@@ -1629,6 +1880,7 @@ document.getElementById('btnRedactClearPage').addEventListener('click', () => {
   redactRects[pi] = [];
   drawRedactOverlay(redactCurrentPage);
   updateRedactInfo();
+  renderOneThumb(redactCurrentPage);
 });
 
 document.getElementById('btnRedactClearAll').addEventListener('click', () => {
@@ -1637,6 +1889,7 @@ document.getElementById('btnRedactClearAll').addEventListener('click', () => {
   redactUndoStack = {};
   drawRedactOverlay(redactCurrentPage);
   updateRedactInfo();
+  (async () => { for (let i = 1; i <= redactPageCount; i++) await renderOneThumb(i); })();
 });
 
 // ===== ZOOM =====
@@ -1648,6 +1901,23 @@ function setRedactZoom(z) {
 document.getElementById('btnRedactZoomIn').addEventListener('click', () => setRedactZoom(redactZoom * 1.25));
 document.getElementById('btnRedactZoomOut').addEventListener('click', () => setRedactZoom(redactZoom / 1.25));
 document.getElementById('btnRedactZoomReset').addEventListener('click', () => setRedactZoom(1));
+
+// ===== ROTATE =====
+async function applyRedactRotation(delta) {
+  const all = document.getElementById('redactRotAll').checked;
+  const targets = all ? Array.from({ length: redactPageCount }, (_, i) => i + 1) : [redactCurrentPage];
+  for (const pageNum of targets) {
+    const pi = pageNum - 1;
+    redactRotation[pi] = (((redactRotation[pi] || 0) + delta) % 360 + 360) % 360;
+  }
+  await renderRedactPage(redactCurrentPage);
+  for (const pageNum of targets) await renderOneThumb(pageNum);
+  document.getElementById('redactStatus').textContent = all
+    ? `全ページを${delta < 0 ? '左' : '右'}に回転しました`
+    : `${redactCurrentPage}ページ目を回転しました`;
+}
+document.getElementById('btnRedactRotLeft').addEventListener('click', () => applyRedactRotation(-90));
+document.getElementById('btnRedactRotRight').addEventListener('click', () => applyRedactRotation(90));
 
 // ===== TEXT EXTRACTION (text layer OR OCR) =====
 // Returns { vp(scale=1), items:[{str,x,y,w,h}] } in top-left PDF-point space
@@ -1698,22 +1968,26 @@ function groupIntoLines(items) {
   return lines;
 }
 
-// ===== CORE: redact by a matcher that returns [start,end) ranges per line =====
+// ===== CORE: find matches and add them as PENDING (gray) candidates =====
+// Matches are NOT blacked out immediately — the user reviews and confirms.
 async function redactByMatcher(pages, getRanges, statusEl) {
   let total = 0;
   let usableText = false;
   for (const pageNum of pages) {
-    const { vp, items, source } = await getPageTextItems(pageNum);
+    const { vp, items } = await getPageTextItems(pageNum);
     if (items.length === 0) continue;
     usableText = true;
     const lines = groupIntoLines(items);
     const pi = pageNum - 1;
-    pushUndo(pi);
-    if (!redactRects[pi]) redactRects[pi] = [];
+    if (!redactPending[pi]) redactPending[pi] = [];
+
+    // existing rects (confirmed + pending) for dedup
+    const existing = (redactRects[pi] || []).concat(redactPending[pi]);
+    const dupKey = r => `${Math.round(r.x * 1000)},${Math.round(r.y * 1000)},${Math.round(r.w * 1000)}`;
+    const seen = new Set(existing.map(dupKey));
 
     for (const line of lines) {
       line.sort((a, b) => a.x - b.x);
-      // Build concatenated string + per-item char offsets
       let s = '';
       const map = [];
       for (const it of line) { const start = s.length; s += it.str; map.push({ start, end: s.length, it }); }
@@ -1733,22 +2007,40 @@ async function redactByMatcher(pages, getRanges, statusEl) {
         const pad = 2;
         const fx = Math.max(0, (minX - pad) / vp.width);
         const fy = Math.max(0, (minY - pad) / vp.height);
-        redactRects[pi].push({
+        const rect = {
           x: fx, y: fy,
           w: Math.min((maxX - minX + pad * 2) / vp.width, 1 - fx),
           h: Math.min((maxY - minY + pad * 2) / vp.height, 1 - fy)
-        });
+        };
+        const k = dupKey(rect);
+        if (seen.has(k)) continue;
+        seen.add(k);
+        redactPending[pi].push(rect);
         total++;
       }
     }
   }
 
-  await renderRedactPage(redactCurrentPage);
+  // If current page has no candidates but another does, jump to the first one
+  if (total > 0 && !(redactPending[redactCurrentPage - 1] || []).length) {
+    for (let i = 1; i <= redactPageCount; i++) {
+      if ((redactPending[i - 1] || []).length) {
+        redactCurrentPage = i;
+        await renderRedactPage(i);
+        updateRedactNav();
+        setCurrentThumb(i);
+        break;
+      }
+    }
+  } else {
+    drawRedactOverlay(redactCurrentPage);
+  }
   updateRedactInfo();
+  updatePendingBar();
   if (!usableText) {
     statusEl.textContent = '⚠️ 文字情報がありません。先に「文字を読み取る（OCR）」を実行してください。';
   } else if (total > 0) {
-    statusEl.textContent = `✅ ${total}箇所を黒塗りしました`;
+    statusEl.textContent = `${total}箇所が見つかりました（グレー）。クリックで確定、または「すべて黒に確定」`;
   } else {
     statusEl.textContent = '該当する箇所は見つかりませんでした。';
   }
@@ -1780,11 +2072,20 @@ async function doKeywordSearch(pages) {
       return out;
     };
   } else {
-    const needle = caseSensitive ? raw : raw.toLowerCase();
+    // Space-tolerant: ignore spaces in the term and allow any whitespace
+    // (half/full-width spaces, tabs) between each character in the document.
+    // e.g. "川上健太" matches "川上 健太" / "川　上　健　太".
+    const stripped = raw.replace(/[\s　]+/g, '');
+    if (!stripped) { status.textContent = '⚠️ 探す言葉を入力してください'; return; }
+    const esc = c => c.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    const pattern = Array.from(stripped).map(esc).join('[\\s\\u3000]*');
+    const re = new RegExp(pattern, caseSensitive ? 'g' : 'gi');
     getRanges = (s) => {
-      const out = []; const hay = caseSensitive ? s : s.toLowerCase();
-      let pos = 0;
-      while (true) { const i = hay.indexOf(needle, pos); if (i < 0) break; out.push([i, i + needle.length]); pos = i + needle.length; }
+      const out = []; re.lastIndex = 0; let m;
+      while ((m = re.exec(s)) !== null) {
+        if (m[0].length === 0) { re.lastIndex++; continue; }
+        out.push([m.index, m.index + m[0].length]);
+      }
       return out;
     };
   }
@@ -1798,15 +2099,17 @@ document.getElementById('redactSearchTerm').addEventListener('keydown', e => {
 });
 
 // ===== METHOD 2: pattern presets =====
+const JP_PREF = '(?:北海道|青森県|岩手県|宮城県|秋田県|山形県|福島県|茨城県|栃木県|群馬県|埼玉県|千葉県|東京都|神奈川県|新潟県|富山県|石川県|福井県|山梨県|長野県|岐阜県|静岡県|愛知県|三重県|滋賀県|京都府|大阪府|兵庫県|奈良県|和歌山県|鳥取県|島根県|岡山県|広島県|山口県|徳島県|香川県|愛媛県|高知県|福岡県|佐賀県|長崎県|熊本県|大分県|宮崎県|鹿児島県|沖縄県)';
 const REDACT_PATTERNS = {
   phone:  '0\\d{1,4}[-－(（]?\\d{1,4}[-－)）]?\\d{3,4}',
   postal: '〒?\\s?\\d{3}[-－]?\\d{4}',
+  // 住所：都道府県（任意）＋市区町村＋丁目番地号などの番地表記まで
+  address: JP_PREF + '?[^\\s　]{1,18}?[市区郡町村][^\\s　]{0,18}?[0-9０-９]+(?:[-－‐ー条丁目番地号の][0-9０-９]*)+号?',
   email:  '[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\\.[A-Za-z]{2,}',
   date:   '(令和|平成|昭和|R|H|S)?\\s?\\d{1,4}\\s?年\\s?\\d{1,2}\\s?月\\s?\\d{1,2}\\s?日|\\d{4}[\\/.\\-年]\\d{1,2}[\\/.\\-月]\\d{1,2}日?',
-  money:  '[¥￥]\\s?[\\d,，]+|[\\d,，]+\\s?円',
-  number: '[\\d]{6,}'
+  money:  '[¥￥]\\s?[\\d,，]+|[\\d,，]+\\s?円'
 };
-const PATTERN_LABELS = { phone:'電話番号', postal:'郵便番号', email:'メール', date:'日付', money:'金額', number:'長い数字' };
+const PATTERN_LABELS = { phone:'電話番号', postal:'郵便番号', address:'住所', email:'メール', date:'日付', money:'金額' };
 
 async function doPatternRedact(patKey) {
   const status = document.getElementById('redactPatternStatus');
@@ -1823,7 +2126,7 @@ async function doPatternRedact(patKey) {
     return out;
   };
   const total = await redactByMatcher(allPages(), getRanges, status);
-  if (total > 0) status.textContent = `✅ ${PATTERN_LABELS[patKey]}を ${total}箇所 黒塗りしました`;
+  if (total > 0) status.textContent = `${PATTERN_LABELS[patKey]}を ${total}箇所 検出（グレー）。クリックで確定`;
 }
 
 document.querySelectorAll('.redact-pattern-btn').forEach(btn => {
@@ -1917,56 +2220,85 @@ document.getElementById('btnRedactOcr').addEventListener('click', async () => {
   }
 });
 
+// Reflect chosen format in the filename suffix label
+document.getElementById('redactOutFormat').addEventListener('change', () => {
+  const fmt = document.getElementById('redactOutFormat').value;
+  document.getElementById('redactOutExt').textContent = fmt === 'pdf' ? '.pdf' : (fmt === 'jpg' ? '.jpg（連番）' : '.png（連番）');
+});
+
+// Render one redacted page to a canvas (rotation + black rects baked in)
+async function renderRedactedCanvas(renderDoc, pageNum, saveScale) {
+  const page = await renderDoc.getPage(pageNum);
+  const rot = redactRotation[pageNum - 1] || 0;
+  const totalRot = (((page.rotate || 0) + rot) % 360 + 360) % 360;
+  const vp = page.getViewport({ scale: saveScale, rotation: totalRot });
+  const cvs = document.createElement('canvas');
+  cvs.width = vp.width; cvs.height = vp.height;
+  const ctx = cvs.getContext('2d');
+  await page.render({ canvasContext: ctx, viewport: vp }).promise;
+  ctx.fillStyle = '#000000';
+  for (const r of (redactRects[pageNum - 1] || [])) {
+    const m = mapRectFrac(r, rot);
+    ctx.fillRect(m.x * cvs.width, m.y * cvs.height, m.w * cvs.width, m.h * cvs.height);
+  }
+  return cvs;
+}
+
 // Download: rasterize all pages with black rects baked in (removes ALL text layers)
 document.getElementById('btnRedactDownload').addEventListener('click', async () => {
   const status = document.getElementById('redactStatus');
   const bar = document.getElementById('redactProgress');
   const fill = document.getElementById('redactProgressFill');
+  const fmt = document.getElementById('redactOutFormat').value;       // pdf | png | jpg
+  const dpi = parseFloat(document.getElementById('redactOutQuality').value) || 300;
+  const saveScale = dpi / 72;  // PDF points are 72dpi
+  const fname = (document.getElementById('redactOutputName').value.trim() || '黒塗り済み');
+
+  // Warn if there are unconfirmed (gray) candidates — they will NOT be redacted
+  const pend = pendingCount();
+  if (pend > 0) {
+    const go = confirm(`未確定のグレー候補が ${pend}件 あります。\n\nこのまま進めると、これらは黒塗りされません。\n（先に「すべて黒に確定」を押すと全て黒塗りできます）\n\nOK：候補を無視して出力 ／ キャンセル：戻って確認`);
+    if (!go) return;
+  }
+
   bar.classList.add('show');
   status.textContent = '処理中...';
 
   try {
-    const saveScale = 2.2;
-    const newPdf = await PDFDocument.create();
-
-    // Open a fresh pdf.js doc for rendering to avoid state conflicts
     const copy = new Uint8Array(redactFileData).slice().buffer;
     const renderDoc = await pdfjsLib.getDocument({ data: copy }).promise;
 
-    for (let pageNum = 1; pageNum <= redactPageCount; pageNum++) {
-      fill.style.width = `${((pageNum - 1) / redactPageCount) * 92}%`;
-      status.textContent = `ページ ${pageNum}/${redactPageCount} を画像化中...`;
-
-      const page = await renderDoc.getPage(pageNum);
-      const vp = page.getViewport({ scale: saveScale });
-
-      // Render PDF page to canvas
-      const cvs = document.createElement('canvas');
-      cvs.width = vp.width;
-      cvs.height = vp.height;
-      const ctx = cvs.getContext('2d');
-      await page.render({ canvasContext: ctx, viewport: vp }).promise;
-
-      // Paint black rectangles (fractions × canvas size)
-      ctx.fillStyle = '#000000';
-      for (const r of (redactRects[pageNum - 1] || [])) {
-        ctx.fillRect(r.x * cvs.width, r.y * cvs.height, r.w * cvs.width, r.h * cvs.height);
+    if (fmt === 'pdf') {
+      const newPdf = await PDFDocument.create();
+      for (let pageNum = 1; pageNum <= redactPageCount; pageNum++) {
+        fill.style.width = `${((pageNum - 1) / redactPageCount) * 92}%`;
+        status.textContent = `ページ ${pageNum}/${redactPageCount} を画像化中...`;
+        const cvs = await renderRedactedCanvas(renderDoc, pageNum, saveScale);
+        const blob = await new Promise(res => cvs.toBlob(res, 'image/png'));
+        const img = await newPdf.embedPng(new Uint8Array(await blob.arrayBuffer()));
+        // Page size in points = canvas px / saveScale
+        const pw = cvs.width / saveScale, ph = cvs.height / saveScale;
+        const pdfPage = newPdf.addPage([pw, ph]);
+        pdfPage.drawImage(img, { x: 0, y: 0, width: pw, height: ph });
       }
-
-      // Convert canvas → PNG → embed in PDF
-      const blob = await new Promise(res => cvs.toBlob(res, 'image/png'));
-      const pngBytes = new Uint8Array(await blob.arrayBuffer());
-      const vp1 = page.getViewport({ scale: 1 });
-      const img = await newPdf.embedPng(pngBytes);
-      const pdfPage = newPdf.addPage([vp1.width, vp1.height]);
-      pdfPage.drawImage(img, { x: 0, y: 0, width: vp1.width, height: vp1.height });
+      fill.style.width = '100%';
+      const bytes = await newPdf.save();
+      downloadBlob(new Blob([bytes], { type: 'application/pdf' }), fname + '.pdf');
+      status.textContent = '✅ ダウンロード完了（テキスト層は完全に削除済み）';
+    } else {
+      // Image output: one file per page
+      const mime = fmt === 'jpg' ? 'image/jpeg' : 'image/png';
+      const ext = fmt === 'jpg' ? 'jpg' : 'png';
+      for (let pageNum = 1; pageNum <= redactPageCount; pageNum++) {
+        fill.style.width = `${(pageNum / redactPageCount) * 100}%`;
+        status.textContent = `ページ ${pageNum}/${redactPageCount} を画像化中...`;
+        const cvs = await renderRedactedCanvas(renderDoc, pageNum, saveScale);
+        const blob = await new Promise(res => cvs.toBlob(res, mime, fmt === 'jpg' ? 0.85 : undefined));
+        downloadBlob(blob, `${fname}_${pageNum}.${ext}`);
+        await new Promise(r => setTimeout(r, 250)); // avoid browser blocking rapid downloads
+      }
+      status.textContent = `✅ ${redactPageCount}枚の画像をダウンロードしました`;
     }
-
-    fill.style.width = '100%';
-    const bytes = await newPdf.save();
-    const fname = (document.getElementById('redactOutputName').value.trim() || '黒塗り済み');
-    download(bytes, fname + '.pdf');
-    status.textContent = '✅ ダウンロード完了（テキスト層は完全に削除済み）';
   } catch (err) {
     status.textContent = 'エラー: ' + err.message;
     console.error(err);
@@ -1981,20 +2313,28 @@ document.getElementById('btnClearRedact').addEventListener('click', () => {
   redactPdfJsDoc = null;
   redactRects = {};
   redactUndoStack = {};
+  redactOcrData = {};
+  redactRotation = {};
+  redactPending = {};
+  redactZoom = 1;
+  document.getElementById('redactThumbs').innerHTML = '';
+  document.getElementById('redactPendingBar').style.display = 'none';
   document.getElementById('redactWorkArea').style.display = 'none';
   document.getElementById('redactStatus').textContent = '';
   redactFileInputEl.value = '';
 });
 
-// ===== DOWNLOAD HELPER =====
-function download(bytes, filename) {
-  const blob = new Blob([bytes], { type: 'application/pdf' });
+// ===== DOWNLOAD HELPERS =====
+function downloadBlob(blob, filename) {
   const url = URL.createObjectURL(blob);
   const a = document.createElement('a');
   a.href = url;
   a.download = filename;
   a.click();
   URL.revokeObjectURL(url);
+}
+function download(bytes, filename) {
+  downloadBlob(new Blob([bytes], { type: 'application/pdf' }), filename);
 }
 </script>
 </body>
