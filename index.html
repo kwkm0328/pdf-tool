@@ -655,6 +655,86 @@ async function handleMergeFiles(files) {
   mergeFileInput.value = '';
 }
 
+// ===== OFFICE TEXT-LAYER CAPTURE (for redact tab: enables search without OCR) =====
+// When enabled, the office→image conversion also records text positions so that
+// keyword/pattern search works on the resulting image PDF without running OCR.
+let redactCollectOfficeText = false;     // set true by the redact load path
+let redactOfficeTextByPage = null;       // { pageIdx: [{str,x,y,w,h}] } in A4 points (top-left)
+let redactOfficeTextBase = 0;            // page offset (for multi-sheet Excel)
+const A4_PT_W = 595.28, A4_PT_H = 841.89;
+
+// Merge a single render's captured text (keyed 0..n-1) into the global map at the
+// current page base, then advance the base by the number of pages that render produced.
+function mergeOfficeText(captured, numPages) {
+  if (!redactOfficeTextByPage) redactOfficeTextByPage = {};
+  for (const k of Object.keys(captured)) {
+    redactOfficeTextByPage[+k + redactOfficeTextBase] = captured[k];
+  }
+  redactOfficeTextBase += numPages;
+}
+
+// Walk text nodes in a rendered container and record per-line text boxes,
+// mapped to A4-point space per page (pageWidth/pageHeight are CSS px of the container).
+function captureOfficeText(container, pageWidth, pageHeight) {
+  const byPage = {};
+  const crect = container.getBoundingClientRect();
+  const fx = A4_PT_W / pageWidth;   // CSS px → PDF points (x)
+  const fy = A4_PT_H / pageHeight;  // CSS px → PDF points (y)
+
+  const add = (str, left, top, right, bottom) => {
+    if (!str || !str.trim()) return;
+    const xCss = left - crect.left;
+    const yCssAbs = top - crect.top;
+    const h = bottom - top, w = right - left;
+    if (w < 1 || h < 1) return;
+    const pageIdx = Math.floor((yCssAbs + h / 2) / pageHeight);
+    if (pageIdx < 0) return;
+    const yRel = yCssAbs - pageIdx * pageHeight;
+    if (!byPage[pageIdx]) byPage[pageIdx] = [];
+    byPage[pageIdx].push({ str, x: xCss * fx, y: yRel * fy, w: w * fx, h: h * fy });
+  };
+
+  const walker = document.createTreeWalker(container, NodeFilter.SHOW_TEXT);
+  let total = 0;
+  const nodes = [];
+  let n;
+  while ((n = walker.nextNode())) { if (n.nodeValue && n.nodeValue.trim()) { nodes.push(n); total += n.nodeValue.length; } }
+  const perChar = total <= 30000; // accurate per-line grouping for normal docs
+
+  for (const node of nodes) {
+    const full = node.nodeValue;
+    if (perChar) {
+      let cur = null;
+      for (let i = 0; i < full.length; i++) {
+        const range = document.createRange();
+        range.setStart(node, i); range.setEnd(node, i + 1);
+        const r = range.getBoundingClientRect();
+        if (r.width === 0 && r.height === 0) continue; // line break / collapsed space
+        if (cur && Math.abs(r.top - cur.top) < Math.max(r.height, cur.bottom - cur.top) * 0.6) {
+          cur.str += full[i];
+          cur.left = Math.min(cur.left, r.left); cur.top = Math.min(cur.top, r.top);
+          cur.right = Math.max(cur.right, r.right); cur.bottom = Math.max(cur.bottom, r.bottom);
+        } else {
+          if (cur) add(cur.str, cur.left, cur.top, cur.right, cur.bottom);
+          cur = { str: full[i], left: r.left, top: r.top, right: r.right, bottom: r.bottom };
+        }
+      }
+      if (cur) add(cur.str, cur.left, cur.top, cur.right, cur.bottom);
+    } else {
+      // Fast path for very large docs: one box per line rect (string approximated as whole node)
+      const range = document.createRange();
+      range.selectNodeContents(node);
+      const rects = range.getClientRects();
+      if (rects.length === 1) {
+        add(full, rects[0].left, rects[0].top, rects[0].right, rects[0].bottom);
+      } else {
+        for (const r of rects) add(full, r.left, r.top, r.right, r.bottom);
+      }
+    }
+  }
+  return byPage;
+}
+
 // ===== OFFICE FILE CONVERSION (Word/Excel → image pages) =====
 async function officeToImages(fileName, arrayBuffer) {
   const ext = fileName.toLowerCase().split('.').pop();
@@ -706,6 +786,11 @@ async function wordToImages(arrayBuffer) {
     const totalHeight = container.scrollHeight;
     const numPages = Math.max(1, Math.ceil(totalHeight / pageHeight));
     const pages = [];
+
+    // 文字位置の取り込み（黒塗りタブの検索用）
+    if (redactCollectOfficeText) {
+      try { mergeOfficeText(captureOfficeText(container, pageWidth, pageHeight), numPages); } catch (e) { console.warn('文字位置の取り込みに失敗:', e); }
+    }
 
     for (let i = 0; i < numPages; i++) {
       const captureH = Math.min(pageHeight, totalHeight - i * pageHeight);
@@ -804,6 +889,11 @@ async function htmlToPageImages(html, type) {
   const totalHeight = container.scrollHeight;
   const numPages = Math.max(1, Math.ceil(totalHeight / pageHeight));
   const pages = [];
+
+  // 文字位置の取り込み（黒塗りタブの検索用）
+  if (redactCollectOfficeText) {
+    try { mergeOfficeText(captureOfficeText(container, pageWidth, pageHeight), numPages); } catch (e) { console.warn('文字位置の取り込みに失敗:', e); }
+  }
 
   for (let i = 0; i < numPages; i++) {
     // html2canvas の y オプションで各ページの開始位置を指定してキャプチャ
@@ -1470,6 +1560,7 @@ let redactOcrData = {};        // { pageIdx: [{str,x,y,w,h}] } in scale=1 PDF-po
 let redactRotation = {};       // { pageIdx: 0|90|180|270 } extra rotation applied by user
 let redactPending = {};        // { pageIdx: [{x,y,w,h}] } gray candidates awaiting confirmation
 let redactRenderTask = null;   // in-flight pdf.js render task for the main canvas
+let redactHasOfficeText = false; // true when a captured office text layer is in use
 const OCR_RENDER_SCALE = 2;    // render scale used for OCR accuracy
 
 // Map an unrotated normalized point/rect into the displayed (rotated) space
@@ -1524,15 +1615,23 @@ async function handleRedactFile(file) {
     return;
   }
   try {
+    let capturedOfficeText = null;
     if (!isPdfFile(file)) {
       document.getElementById('redactWorkArea').style.display = 'none';
       const up = document.getElementById('redactUpload');
       const orig = up.querySelector('p').textContent;
       up.querySelector('p').textContent = `${file.name} をPDFに変換中...`;
+      // For Word/Excel, also capture text positions so search works without OCR
+      const isOffice = isOfficeFile(file);
+      redactCollectOfficeText = isOffice;
+      redactOfficeTextByPage = null;
+      redactOfficeTextBase = 0;
       try {
         const pdfBytes = await fileToPdfBytes(file);
         redactFileData = pdfBytes.buffer.slice(pdfBytes.byteOffset, pdfBytes.byteOffset + pdfBytes.byteLength);
+        if (isOffice && redactOfficeTextByPage) capturedOfficeText = redactOfficeTextByPage;
       } finally {
+        redactCollectOfficeText = false;
         up.querySelector('p').textContent = orig;
       }
     } else {
@@ -1548,6 +1647,13 @@ async function handleRedactFile(file) {
     redactRotation = {};
     redactPending = {};
     redactZoom = 1;
+    redactHasOfficeText = false;
+
+    // Use captured office text as a virtual text layer (no OCR needed)
+    if (capturedOfficeText && Object.keys(capturedOfficeText).length) {
+      redactOcrData = capturedOfficeText;
+      redactHasOfficeText = true;
+    }
 
     document.getElementById('redactWorkArea').style.display = 'block';
     document.getElementById('redactFileNameLabel').textContent = file.name;
@@ -1973,11 +2079,17 @@ async function getPageTextItems(pageNum) {
 
 // Detect text layer on first page → guide the OCR box
 async function redactDetectTextLayer() {
+  const ocrBox = document.getElementById('redactOcrBox');
   try {
+    // Word/Excel: a text layer was already captured → no OCR needed
+    if (redactHasOfficeText) {
+      ocrBox.style.display = 'none';
+      document.getElementById('redactStatus').textContent = '✅ 文字を取り込みました。🔍言葉で探す・🎯種類で一括がそのまま使えます。';
+      return;
+    }
     const page = await redactPdfJsDoc.getPage(1);
     const tc = await page.getTextContent();
     const hasText = tc.items.some(it => it.str && it.str.trim());
-    const ocrBox = document.getElementById('redactOcrBox');
     if (hasText) {
       ocrBox.style.display = 'none'; // text-based PDF: OCR not needed
     } else {
@@ -2146,8 +2258,9 @@ const REDACT_PATTERNS = {
   address: '(?:' + JP_PREF + ')?[' + ADDR_KANJI + ']{1,5}[市区郡][' + ADDR_BODY + ']{0,25}[0-9０-９号目]',
   email:  '[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\\.[A-Za-z]{2,}',
   date:   '(令和|平成|昭和|R|H|S)?\\s?\\d{1,4}\\s?年\\s?\\d{1,2}\\s?月\\s?\\d{1,2}\\s?日|\\d{4}[\\/.\\-年]\\d{1,2}[\\/.\\-月]\\d{1,2}日?',
-  // ¥付き / 円付き / カンマ区切りの数字（例 1,550,000）も金額として検出
-  money:  '[¥￥]\\s?[\\d,，]+|[\\d,，]+\\s?円|[0-9０-９]{1,3}(?:[,，][0-9０-９]{3})+'
+  // ¥付き / 円付き / カンマ区切り(1,550,000) / 5桁以上の数字(1550000) を金額として検出
+  // ※4桁の年号(2024)は拾わないよう5桁以上に限定
+  money:  '[¥￥]\\s?[\\d,，]+|[\\d,，]+\\s?円|[0-9０-９]{1,3}(?:[,，][0-9０-９]{3})+|[0-9０-９]{5,}'
 };
 const PATTERN_LABELS = { phone:'電話番号', postal:'郵便番号', address:'住所', email:'メール', date:'日付', money:'金額' };
 
@@ -2363,6 +2476,9 @@ document.getElementById('btnClearRedact').addEventListener('click', () => {
   redactRotation = {};
   redactPending = {};
   redactZoom = 1;
+  redactHasOfficeText = false;
+  redactOfficeTextByPage = null;
+  redactOfficeTextBase = 0;
   document.getElementById('redactThumbs').innerHTML = '';
   document.getElementById('redactPendingBar').style.display = 'none';
   document.getElementById('redactWorkArea').style.display = 'none';
