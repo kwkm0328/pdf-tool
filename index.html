@@ -183,6 +183,18 @@ body { font-family: 'Segoe UI', 'Yu Gothic UI', 'Meiryo', sans-serif; background
 .redact-check-result .leak-pg { background: #1a73e8; color: #fff; font-size: 11px; padding: 1px 7px; border-radius: 10px; white-space: nowrap; cursor: pointer; }
 .redact-check-result .leak-cat { font-size: 11px; color: #b54708; font-weight: 700; white-space: nowrap; }
 .redact-check-result .leak-txt { flex: 1; min-width: 120px; font-family: Consolas, monospace; color: #c0392b; word-break: break-all; }
+/* Before/After comparison */
+.compare-content { background: #fff; border-radius: 12px; padding: 16px 18px; width: 94vw; max-width: 1200px; height: 92vh; display: flex; flex-direction: column; }
+.compare-header { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; padding-bottom: 12px; border-bottom: 1px solid #e0e0e0; }
+.compare-header strong { font-size: 16px; }
+.compare-nav { display: flex; align-items: center; gap: 10px; }
+.compare-body { flex: 1; display: flex; gap: 14px; overflow: hidden; margin-top: 12px; }
+.compare-pane { flex: 1; min-width: 0; display: flex; flex-direction: column; }
+.compare-label { font-size: 13px; font-weight: 700; text-align: center; padding: 6px; border-radius: 6px 6px 0 0; }
+.compare-label-before { background: #eef3fb; color: #1a4f9c; }
+.compare-label-after { background: #fdecec; color: #b71c1c; }
+.compare-canvas-wrap { flex: 1; overflow: auto; background: #555; border-radius: 0 0 6px 6px; display: flex; justify-content: center; align-items: flex-start; padding: 10px; }
+.compare-canvas-wrap canvas { width: 100%; height: auto; display: block; box-shadow: 0 2px 12px rgba(0,0,0,0.4); }
 </style>
 </head>
 <body>
@@ -495,6 +507,8 @@ body { font-family: 'Segoe UI', 'Yu Gothic UI', 'Meiryo', sans-serif; background
         <label style="font-size:12px;display:flex;align-items:center;gap:4px;cursor:pointer;white-space:nowrap;" title="チェックすると全ページをまとめて回転します">
           <input type="checkbox" id="redactRotAll" style="width:13px;height:13px;"> 全ページ
         </label>
+        <div class="redact-toolbar-sep"></div>
+        <button class="btn-small-outline" id="btnRedactCompare" title="黒塗り前と後を左右に並べて確認">⇄ 前後を比較</button>
       </div>
 
       <!-- Thumbnails sidebar + main canvas -->
@@ -570,6 +584,31 @@ body { font-family: 'Segoe UI', 'Yu Gothic UI', 'Meiryo', sans-serif; background
   <div class="modal-content">
     <button class="modal-close" id="modalClose">&times;</button>
     <canvas id="modalCanvas"></canvas>
+  </div>
+</div>
+
+<!-- Before/After comparison modal -->
+<div class="modal" id="compareModal">
+  <div class="compare-content">
+    <div class="compare-header">
+      <strong>黒塗り 前後比較</strong>
+      <div class="compare-nav">
+        <button class="btn btn-secondary" id="btnCompPrev" style="padding:6px 14px;">← 前</button>
+        <span id="compPageInd" style="font-size:14px;font-weight:600;min-width:80px;text-align:center;"></span>
+        <button class="btn btn-secondary" id="btnCompNext" style="padding:6px 14px;">次 →</button>
+      </div>
+      <button class="btn btn-danger" id="btnCompClose" style="padding:6px 14px;">閉じる</button>
+    </div>
+    <div class="compare-body">
+      <div class="compare-pane">
+        <div class="compare-label compare-label-before">黒塗り前（原本）</div>
+        <div class="compare-canvas-wrap"><canvas id="compBefore"></canvas></div>
+      </div>
+      <div class="compare-pane">
+        <div class="compare-label compare-label-after">黒塗り後（黒＝確定／グレー＝未確定の候補）</div>
+        <div class="compare-canvas-wrap"><canvas id="compAfter"></canvas></div>
+      </div>
+    </div>
   </div>
 </div>
 
@@ -2618,6 +2657,54 @@ document.getElementById('btnRedactCheck').addEventListener('click', async () => 
     document.getElementById('redactStatus').textContent = `${findings.length}件をグレー候補に追加しました。確認して「すべて黒に確定」してください。`;
   });
 });
+
+// ===== 前後比較ビュー =====
+let redactCompPage = 1;
+
+async function renderCompareCanvas(pageNum, canvas, withRedactions) {
+  const page = await redactPdfJsDoc.getPage(pageNum);
+  const rot = redactRotation[pageNum - 1] || 0;
+  const totalRot = (((page.rotate || 0) + rot) % 360 + 360) % 360;
+  const vp1 = page.getViewport({ scale: 1, rotation: totalRot });
+  const maxW = Math.min((window.innerWidth - 140) / 2, 540);
+  const scale = Math.min(2, maxW / vp1.width);
+  const vp = page.getViewport({ scale, rotation: totalRot });
+  canvas.width = vp.width; canvas.height = vp.height;
+  const ctx = canvas.getContext('2d');
+  await page.render({ canvasContext: ctx, viewport: vp }).promise;
+  if (withRedactions) {
+    for (const r of (redactRects[pageNum - 1] || [])) {
+      const m = mapRectFrac(r, rot);
+      ctx.fillStyle = '#000';
+      ctx.fillRect(m.x * canvas.width, m.y * canvas.height, m.w * canvas.width, m.h * canvas.height);
+    }
+    for (const r of (redactPending[pageNum - 1] || [])) {
+      const m = mapRectFrac(r, rot);
+      ctx.fillStyle = 'rgba(110,110,110,0.6)';
+      ctx.fillRect(m.x * canvas.width, m.y * canvas.height, m.w * canvas.width, m.h * canvas.height);
+    }
+  }
+}
+
+async function renderCompare() {
+  document.getElementById('compPageInd').textContent = `${redactCompPage} / ${redactPageCount}`;
+  document.getElementById('btnCompPrev').disabled = redactCompPage <= 1;
+  document.getElementById('btnCompNext').disabled = redactCompPage >= redactPageCount;
+  // render sequentially (same page proxy) to avoid canvas conflicts
+  await renderCompareCanvas(redactCompPage, document.getElementById('compBefore'), false);
+  await renderCompareCanvas(redactCompPage, document.getElementById('compAfter'), true);
+}
+
+document.getElementById('btnRedactCompare').addEventListener('click', async () => {
+  if (!redactPdfJsDoc) return;
+  redactCompPage = redactCurrentPage;
+  document.getElementById('compareModal').classList.add('show');
+  await renderCompare();
+});
+document.getElementById('btnCompPrev').addEventListener('click', async () => { if (redactCompPage > 1) { redactCompPage--; await renderCompare(); } });
+document.getElementById('btnCompNext').addEventListener('click', async () => { if (redactCompPage < redactPageCount) { redactCompPage++; await renderCompare(); } });
+document.getElementById('btnCompClose').addEventListener('click', () => document.getElementById('compareModal').classList.remove('show'));
+document.getElementById('compareModal').addEventListener('click', e => { if (e.target === e.currentTarget) document.getElementById('compareModal').classList.remove('show'); });
 
 // ===== OCR (opt-in, lazy-loaded Tesseract.js) =====
 function loadScriptOnce(src) {
