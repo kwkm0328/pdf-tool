@@ -338,6 +338,24 @@ body { font-family: 'Segoe UI', 'Yu Gothic UI', 'Meiryo', sans-serif; background
         <button class="btn btn-danger" id="btnRedactClearAll" style="padding:6px 14px;font-size:13px;">全ページをクリア</button>
       </div>
 
+      <!-- Search & Redact section -->
+      <div class="split-source" style="margin-bottom:12px;">
+        <div class="section-title">🔍 キーワード検索して黒塗り</div>
+        <p style="font-size:13px;color:#666;margin:8px 0 12px;">特定の名前・住所・金額などを入力すると、その箇所だけをピンポイントで黒塗りします。</p>
+        <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;">
+          <input type="text" id="redactSearchTerm" placeholder="例：山田太郎、〇〇町、電話番号..."
+            style="flex:1;min-width:220px;padding:8px 12px;border:1px solid #ddd;border-radius:6px;font-size:14px;">
+          <label style="font-size:13px;display:flex;align-items:center;gap:5px;white-space:nowrap;cursor:pointer;">
+            <input type="checkbox" id="redactSearchCase" style="width:14px;height:14px;"> 大小文字を区別
+          </label>
+        </div>
+        <div style="display:flex;gap:10px;margin-top:10px;flex-wrap:wrap;align-items:center;">
+          <button class="btn btn-secondary" id="btnRedactSearchPage" style="padding:8px 18px;">このページを黒塗り</button>
+          <button class="btn btn-primary" id="btnRedactSearchAll" style="padding:8px 18px;">全ページを黒塗り</button>
+          <span id="redactSearchStatus" style="font-size:13px;color:#555;"></span>
+        </div>
+      </div>
+
       <!-- Info bar -->
       <div class="redact-info-bar" id="redactInfoBar">ファイルを読み込み中...</div>
 
@@ -1574,6 +1592,119 @@ document.getElementById('btnRedactAutoPage').addEventListener('click', () => {
 });
 document.getElementById('btnRedactAutoAll').addEventListener('click', () => {
   autoRedact(Array.from({ length: redactPageCount }, (_, i) => i + 1));
+});
+
+// ===== SEARCH & REDACT =====
+// Group text items into lines by similar vertical position
+function groupIntoLines(items) {
+  const lines = [];
+  for (const item of items) {
+    let placed = false;
+    for (const line of lines) {
+      const ref = line[0];
+      const tol = Math.max(ref.h, item.h) * 0.6;
+      if (Math.abs(item.y - ref.y) < tol) {
+        line.push(item);
+        placed = true;
+        break;
+      }
+    }
+    if (!placed) lines.push([item]);
+  }
+  return lines;
+}
+
+async function searchAndRedact(pages) {
+  const rawTerm = document.getElementById('redactSearchTerm').value;
+  const caseSensitive = document.getElementById('redactSearchCase').checked;
+  const status = document.getElementById('redactSearchStatus');
+
+  if (!rawTerm.trim()) { status.textContent = '⚠️ 検索語を入力してください'; return; }
+  status.textContent = '検索中...';
+
+  const searchTerm = caseSensitive ? rawTerm : rawTerm.toLowerCase();
+  let totalFound = 0;
+
+  for (const pageNum of pages) {
+    const page = await redactPdfJsDoc.getPage(pageNum);
+    const vp = page.getViewport({ scale: 1 }); // coords in PDF points
+    const textContent = await page.getTextContent();
+
+    // Map each item to canvas-space bounding box
+    const items = textContent.items
+      .filter(it => it.str)
+      .map(it => {
+        const tx = pdfjsLib.Util.transform(vp.transform, it.transform);
+        const h = Math.abs(tx[3]) > 0 ? Math.abs(tx[3]) : (it.height || 10);
+        const w = it.width > 0 ? it.width : h;
+        return { str: it.str, x: tx[4], y: tx[5] - h, w, h };
+      });
+
+    const lines = groupIntoLines(items);
+    const pi = pageNum - 1;
+    pushUndo(pi);
+    if (!redactRects[pi]) redactRects[pi] = [];
+
+    for (const line of lines) {
+      line.sort((a, b) => a.x - b.x);
+      const lineStr = line.map(it => it.str).join('');
+      const searchStr = caseSensitive ? lineStr : lineStr.toLowerCase();
+
+      let pos = 0;
+      while (pos < searchStr.length) {
+        const matchPos = searchStr.indexOf(searchTerm, pos);
+        if (matchPos === -1) break;
+
+        // Compute union bounding box of all items overlapping the match
+        let charIdx = 0;
+        let minX = Infinity, maxX = -Infinity, minY = Infinity, maxY = -Infinity;
+
+        for (const it of line) {
+          const start = charIdx;
+          const end = charIdx + it.str.length;
+          if (end > matchPos && start < matchPos + searchTerm.length) {
+            if (it.x < minX) minX = it.x;
+            if (it.x + it.w > maxX) maxX = it.x + it.w;
+            if (it.y < minY) minY = it.y;
+            if (it.y + it.h > maxY) maxY = it.y + it.h;
+          }
+          charIdx = end;
+        }
+
+        if (minX < Infinity) {
+          const pad = 2;
+          redactRects[pi].push({
+            x: Math.max(0, (minX - pad) / vp.width),
+            y: Math.max(0, (minY - pad) / vp.height),
+            w: Math.min((maxX - minX + pad * 2) / vp.width, 1 - Math.max(0, (minX - pad) / vp.width)),
+            h: Math.min((maxY - minY + pad * 2) / vp.height, 1 - Math.max(0, (minY - pad) / vp.height))
+          });
+          totalFound++;
+        }
+        pos = matchPos + 1;
+      }
+    }
+  }
+
+  await renderRedactPage(redactCurrentPage);
+  updateRedactInfo();
+  if (totalFound > 0) {
+    status.textContent = `✅ ${totalFound}箇所を黒塗りしました`;
+  } else {
+    status.textContent = '該当箇所が見つかりませんでした（テキスト層のないPDFは検出不可）';
+  }
+}
+
+document.getElementById('btnRedactSearchPage').addEventListener('click', () => {
+  searchAndRedact([redactCurrentPage]);
+});
+document.getElementById('btnRedactSearchAll').addEventListener('click', () => {
+  searchAndRedact(Array.from({ length: redactPageCount }, (_, i) => i + 1));
+});
+
+// Enter key in search box triggers all-page search
+document.getElementById('redactSearchTerm').addEventListener('keydown', e => {
+  if (e.key === 'Enter') searchAndRedact(Array.from({ length: redactPageCount }, (_, i) => i + 1));
 });
 
 // Download: rasterize all pages with black rects baked in (removes ALL text layers)
