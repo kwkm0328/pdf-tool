@@ -7,6 +7,7 @@
 <script src="https://unpkg.com/pdf-lib@1.17.1/dist/pdf-lib.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
 <script src="https://unpkg.com/mammoth@1.6.0/mammoth.browser.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/docx-preview@0.1.22/dist/docx-preview.min.js"></script>
 <script src="https://cdn.sheetjs.com/xlsx-0.20.1/package/dist/xlsx.full.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
@@ -674,20 +675,28 @@ async function wordToImages(arrayBuffer) {
   document.body.appendChild(container);
 
   try {
-    if (typeof docx !== 'undefined' && typeof docx.renderAsync === 'function') {
-      // docx-preview でレンダリング
-      await docx.renderAsync(arrayBuffer, container, null, {
-        inWrapper: false,
-        ignoreWidth: true,
-        ignoreHeight: true,
-        breakPages: false,
-        renderHeaders: false,
-        renderFooters: false,
-        useBase64URL: true,
-      });
-    } else {
+    // docx-preview は JSZip が必要。読めない/失敗した場合は Mammoth にフォールバック
+    let usedDocxPreview = false;
+    if (typeof docx !== 'undefined' && typeof docx.renderAsync === 'function' && typeof JSZip !== 'undefined') {
+      try {
+        await docx.renderAsync(arrayBuffer, container, null, {
+          inWrapper: false,
+          ignoreWidth: true,
+          ignoreHeight: true,
+          breakPages: false,
+          renderHeaders: false,
+          renderFooters: false,
+          useBase64URL: true,
+        });
+        usedDocxPreview = true;
+      } catch (e) {
+        console.warn('docx-preview 失敗、Mammothにフォールバック:', e);
+        container.innerHTML = '';
+      }
+    }
+    if (!usedDocxPreview) {
       // フォールバック: Mammoth
-      const result = await mammoth.convertToHtml({ arrayBuffer });
+      const result = await mammoth.convertToHtml({ arrayBuffer: arrayBuffer.slice ? arrayBuffer.slice(0) : arrayBuffer });
       container.innerHTML = `<style>p{margin:0 0 0.8em;}table{border-collapse:collapse;width:100%;}td,th{border:1px solid #999;padding:4px 8px;}</style>` + result.value;
     }
 
@@ -2137,7 +2146,8 @@ const REDACT_PATTERNS = {
   address: '(?:' + JP_PREF + ')?[' + ADDR_KANJI + ']{1,5}[市区郡][' + ADDR_BODY + ']{0,25}[0-9０-９号目]',
   email:  '[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\\.[A-Za-z]{2,}',
   date:   '(令和|平成|昭和|R|H|S)?\\s?\\d{1,4}\\s?年\\s?\\d{1,2}\\s?月\\s?\\d{1,2}\\s?日|\\d{4}[\\/.\\-年]\\d{1,2}[\\/.\\-月]\\d{1,2}日?',
-  money:  '[¥￥]\\s?[\\d,，]+|[\\d,，]+\\s?円'
+  // ¥付き / 円付き / カンマ区切りの数字（例 1,550,000）も金額として検出
+  money:  '[¥￥]\\s?[\\d,，]+|[\\d,，]+\\s?円|[0-9０-９]{1,3}(?:[,，][0-9０-９]{3})+'
 };
 const PATTERN_LABELS = { phone:'電話番号', postal:'郵便番号', address:'住所', email:'メール', date:'日付', money:'金額' };
 
@@ -2174,18 +2184,24 @@ function loadScriptOnce(src) {
   });
 }
 
-// Traverse Tesseract result for word boxes (handles v5 blocks or flat words)
+// Traverse Tesseract result for boxes (handles v5 blocks or flat words).
+// Falls back to line-level boxes if word boxes are unavailable.
 function extractOcrWords(data) {
-  const words = [];
+  const out = [];
+  const push = o => { if (o && o.text && o.text.trim() && o.bbox) out.push({ text: o.text, bbox: o.bbox }); };
   if (data.words && data.words.length) {
-    for (const w of data.words) if (w.text && w.text.trim()) words.push(w);
-  } else if (data.blocks) {
-    for (const b of (data.blocks || []))
+    data.words.forEach(push);
+  } else if (data.blocks && data.blocks.length) {
+    for (const b of data.blocks)
       for (const p of (b.paragraphs || []))
-        for (const l of (p.lines || []))
-          for (const w of (l.words || [])) if (w.text && w.text.trim()) words.push(w);
+        for (const l of (p.lines || [])) {
+          if (l.words && l.words.length) l.words.forEach(push);
+          else push(l); // line-level fallback
+        }
+  } else if (data.lines && data.lines.length) {
+    data.lines.forEach(push);
   }
-  return words;
+  return out;
 }
 
 document.getElementById('btnRedactOcr').addEventListener('click', async () => {
