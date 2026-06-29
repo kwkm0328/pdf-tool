@@ -438,8 +438,7 @@ body { font-family: 'Segoe UI', 'Yu Gothic UI', 'Meiryo', sans-serif; background
         <p style="font-size:13px;color:#666;margin:8px 0 12px;">よくある個人情報を、ワンクリックで全ページから自動で探します。見つかった箇所は<b>グレーの候補</b>として表示され、クリックで黒塗りに確定します。</p>
         <div class="redact-pattern-grid" id="redactPatternGrid">
           <button class="redact-pattern-btn" data-pat="phone">📞 電話番号</button>
-          <button class="redact-pattern-btn" data-pat="postal">📮 郵便番号</button>
-          <button class="redact-pattern-btn" data-pat="address">🏠 住所</button>
+          <button class="redact-pattern-btn" data-pat="address">🏠 住所（郵便番号・ビル名含む）</button>
           <button class="redact-pattern-btn" data-pat="email">✉️ メール</button>
           <button class="redact-pattern-btn" data-pat="date">📅 日付</button>
           <button class="redact-pattern-btn" data-pat="money">💴 金額</button>
@@ -2250,22 +2249,15 @@ document.getElementById('redactSearchTerm').addEventListener('keydown', e => {
 
 // ===== METHOD 2: pattern presets =====
 const JP_PREF = '(?:北海道|青森県|岩手県|宮城県|秋田県|山形県|福島県|茨城県|栃木県|群馬県|埼玉県|千葉県|東京都|神奈川県|新潟県|富山県|石川県|福井県|山梨県|長野県|岐阜県|静岡県|愛知県|三重県|滋賀県|京都府|大阪府|兵庫県|奈良県|和歌山県|鳥取県|島根県|岡山県|広島県|山口県|徳島県|香川県|愛媛県|高知県|福岡県|佐賀県|長崎県|熊本県|大分県|宮崎県|鹿児島県|沖縄県)';
-// 住所：都道府県（任意）→ 市区郡 → 丁目番地号まで。
-// 開始位置は「漢字だけ」に限定するため、ラベル（場所）やカタカナの建物名
-// （例：ホテル札幌ガーデンパレス）を巻き込まず、市区名から正しく始まります。
-const ADDR_KANJI = '一-龥々ヶ〆';
-const ADDR_BODY  = '一-龥々ヶ〆ぁ-ん0-9０-９\\-－‐ーの条丁目番地号';
 const REDACT_PATTERNS = {
   phone:  '0\\d{1,4}[\\s\\-－‐‑–—ー()（）]?\\d{1,4}[\\s\\-－‐‑–—ー()（）]?\\d{3,4}',
-  postal: '〒?\\s?\\d{3}[-－]?\\d{4}',
-  address: '(?:' + JP_PREF + ')?[' + ADDR_KANJI + ']{1,5}[市区郡][' + ADDR_BODY + ']{0,25}[0-9０-９号目]',
   email:  '[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\\.[A-Za-z]{2,}',
   date:   '(令和|平成|昭和|R|H|S)?\\s?\\d{1,4}\\s?年\\s?\\d{1,2}\\s?月\\s?\\d{1,2}\\s?日|\\d{4}[\\/.\\-年]\\d{1,2}[\\/.\\-月]\\d{1,2}日?',
   // ¥付き / 円付き / カンマ区切り(1,550,000) / 5桁以上の数字(1550000) を金額として検出
   // ※4桁の年号(2024)は拾わないよう5桁以上に限定
   money:  '[¥￥]\\s?[\\d,，]+|[\\d,，]+\\s?円|[0-9０-９]{1,3}(?:[,，][0-9０-９]{3})+|[0-9０-９]{5,}'
 };
-const PATTERN_LABELS = { phone:'電話番号', postal:'郵便番号', address:'住所', email:'メール', date:'日付', money:'金額' };
+const PATTERN_LABELS = { phone:'電話番号', email:'メール', date:'日付', money:'金額' };
 
 async function doPatternRedact(patKey) {
   const status = document.getElementById('redactPatternStatus');
@@ -2285,8 +2277,90 @@ async function doPatternRedact(patKey) {
   if (total > 0) status.textContent = `${PATTERN_LABELS[patKey]}を ${total}箇所 検出（グレー）。クリックで確定`;
 }
 
+// ===== 住所（複数行・郵便番号・ビル名をまとめて1ブロックで黒塗り） =====
+// 行単位ではなく、住所の「塊」を検出するので、改行で分かれた番地やビル名、
+// 上にある郵便番号も含めて、ひとまとまりとして候補化します。
+async function doAddressRedact(pages) {
+  const status = document.getElementById('redactPatternStatus');
+  status.textContent = '住所を検索中...';
+  const POSTAL = /〒?\s?[0-9０-９]{3}[-－]?[0-9０-９]{4}/;
+  const prefRe = new RegExp(JP_PREF);
+  const isCore = s => prefRe.test(s) || (/[市区郡]/.test(s) && /(丁目|番地|[0-9０-９]+\s*条|[0-9０-９]+\s*[-－‐ー]\s*[0-9０-９]|[0-9０-９]+\s*番)/.test(s));
+  const isCont = s => /(丁目|番地|[0-9０-９]+\s*番|[0-9０-９]+\s*号|[0-9０-９]+\s*条|[0-9０-９]+\s*[-－‐ー]\s*[0-9０-９]|ビル|ビルヂ|マンション|ハイツ|コーポ|レジデンス|タワー|ハウス|[0-9０-９]+\s*[FＦ階]|号室|ホテル|会館|センター|[ァ-ヴー]{3,})/.test(s);
+  const isPostalLine = s => POSTAL.test(s) && s.replace(/\s/g, '').length <= 12;
+
+  let total = 0, usable = false;
+  for (const pageNum of pages) {
+    const { vp, items } = await getPageTextItems(pageNum);
+    if (!items.length) continue;
+    usable = true;
+    const lines = groupIntoLines(items).map(line => {
+      line.sort((a, b) => a.x - b.x);
+      let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+      for (const it of line) { minX = Math.min(minX, it.x); minY = Math.min(minY, it.y); maxX = Math.max(maxX, it.x + it.w); maxY = Math.max(maxY, it.y + it.h); }
+      return { str: line.map(i => i.str).join(''), minX, minY, maxX, maxY, h: maxY - minY };
+    }).filter(l => l.str.trim()).sort((a, b) => a.minY - b.minY);
+
+    lines.forEach(l => { l.core = isCore(l.str); l.cont = isCont(l.str); l.postal = isPostalLine(l.str); });
+
+    const xOverlap = (a, b) => (Math.min(a.maxX, b.maxX) - Math.max(a.minX, b.minX)) > -20;
+    const vClose = (a, b) => (b.minY - a.maxY) < Math.max(a.h, b.h) * 1.3;
+
+    const pi = pageNum - 1;
+    if (!redactPending[pi]) redactPending[pi] = [];
+    const existing = (redactRects[pi] || []).concat(redactPending[pi]);
+    const dk = r => `${Math.round(r.x * 1000)},${Math.round(r.y * 1000)},${Math.round(r.w * 1000)}`;
+    const seen = new Set(existing.map(dk));
+    const used = new Array(lines.length).fill(false);
+
+    for (let i = 0; i < lines.length; i++) {
+      if (!lines[i].core || used[i]) continue;
+      const blk = { minX: lines[i].minX, minY: lines[i].minY, maxX: lines[i].maxX, maxY: lines[i].maxY };
+      used[i] = true;
+      // 上方向：すぐ上の郵便番号 / 住所継続行を取り込む
+      if (i - 1 >= 0 && !used[i - 1] && (lines[i - 1].postal || lines[i - 1].cont) && vClose(lines[i - 1], lines[i]) && xOverlap(lines[i - 1], lines[i])) {
+        blk.minX = Math.min(blk.minX, lines[i - 1].minX); blk.minY = Math.min(blk.minY, lines[i - 1].minY);
+        blk.maxX = Math.max(blk.maxX, lines[i - 1].maxX); blk.maxY = Math.max(blk.maxY, lines[i - 1].maxY);
+        used[i - 1] = true;
+      }
+      // 下方向：番地の続き・ビル名などを取り込む
+      let prev = lines[i];
+      for (let j = i + 1; j < lines.length && !used[j] && (lines[j].cont || lines[j].core) && vClose(prev, lines[j]) && xOverlap(prev, lines[j]); j++) {
+        blk.minX = Math.min(blk.minX, lines[j].minX); blk.minY = Math.min(blk.minY, lines[j].minY);
+        blk.maxX = Math.max(blk.maxX, lines[j].maxX); blk.maxY = Math.max(blk.maxY, lines[j].maxY);
+        used[j] = true; prev = lines[j];
+      }
+      const pad = 2;
+      const fx = Math.max(0, (blk.minX - pad) / vp.width);
+      const fy = Math.max(0, (blk.minY - pad) / vp.height);
+      const rect = {
+        x: fx, y: fy,
+        w: Math.min((blk.maxX - blk.minX + pad * 2) / vp.width, 1 - fx),
+        h: Math.min((blk.maxY - blk.minY + pad * 2) / vp.height, 1 - fy)
+      };
+      const k = dk(rect);
+      if (seen.has(k)) continue;
+      seen.add(k);
+      redactPending[pi].push(rect);
+      total++;
+    }
+  }
+
+  if (total > 0 && !(redactPending[redactCurrentPage - 1] || []).length) {
+    for (let i = 1; i <= redactPageCount; i++) {
+      if ((redactPending[i - 1] || []).length) { redactCurrentPage = i; await renderRedactPage(i); updateRedactNav(); setCurrentThumb(i); break; }
+    }
+  } else {
+    drawRedactOverlay(redactCurrentPage);
+  }
+  updateRedactInfo();
+  updatePendingBar();
+  status.textContent = !usable ? '⚠️ 文字情報がありません。先にOCRを実行してください。'
+    : total > 0 ? `住所を ${total}件 検出（グレー）。クリックで確定` : '住所は見つかりませんでした。';
+}
+
 document.querySelectorAll('.redact-pattern-btn').forEach(btn => {
-  btn.addEventListener('click', () => doPatternRedact(btn.dataset.pat));
+  btn.addEventListener('click', () => btn.dataset.pat === 'address' ? doAddressRedact(allPages()) : doPatternRedact(btn.dataset.pat));
 });
 
 // ===== OCR (opt-in, lazy-loaded Tesseract.js) =====
